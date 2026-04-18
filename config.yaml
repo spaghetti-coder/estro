@@ -8,7 +8,7 @@ sections:
           - cd /var
           - ls -1
         remote: my-remote-server  # <- Will be accessable over SSH
-        timeout: 60000
+        timeout: 60
       - title: List /opt
         command:
           - cd /opt
@@ -39,4 +39,4 @@ config:
   subtitle: Execute commands from the web
   hostname: 0.0.0.0
   port: 3000
-  timeout: 30000
+  timeout: 30

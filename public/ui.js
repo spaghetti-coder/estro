@@ -5,7 +5,6 @@
   const pending = {};
 
   let body, checkbox, knob;
-  let siteTitle, siteSub;
   let toastsEl, toastTpl;
   let modal, modalPanel, modalTitle;
   let modalResolve = null, lastActive = null;
@@ -127,7 +126,7 @@
       });
       if (res.ok) {
         const data = await res.json();
-        currentUser = { username: data.username };
+        currentUser = { username: data.username, groups: [] };
         closeLoginModal();
         renderAuthArea();
         loadServices();
@@ -205,20 +204,13 @@
     } catch (err) {
       showToast(err.message || 'Request failed', 'error', 8000);
     } finally {
-      pending[svc] = false;
+      delete pending[svc];
       setButtonPending(btn, false);
     }
   }
 
-  function getSectionExpanded(title) {
-    return localStorage.getItem(SECTION_KEY_PREFIX + title) === 'true';
-  }
-  function setSectionExpanded(title, expanded) {
-    localStorage.setItem(SECTION_KEY_PREFIX + title, String(expanded));
-  }
-
   function renderSection(title, buttons) {
-    const expanded = getSectionExpanded(title);
+    const expanded = localStorage.getItem(SECTION_KEY_PREFIX + title) === 'true';
     const wrapper = document.createElement('div');
     wrapper.className = 'section-group';
     const header = document.createElement('button');
@@ -232,12 +224,39 @@
     if (!expanded) body.classList.add('section-body--collapsed');
     body.append(...buttons);
     header.addEventListener('click', () => {
-      const next = body.classList.toggle('section-body--collapsed');
-      header.setAttribute('aria-expanded', String(!next));
-      setSectionExpanded(title, !next);
+      const nowCollapsed = body.classList.toggle('section-body--collapsed');
+      header.setAttribute('aria-expanded', String(!nowCollapsed));
+      localStorage.setItem(SECTION_KEY_PREFIX + title, String(!nowCollapsed));
     });
     wrapper.append(header, body);
     return wrapper;
+  }
+
+  function buildServiceButton({ id, title, timeout, confirm, public: isPub, accessible, allowedUsers }) {
+    const btn = buttonTpl.cloneNode(true).firstElementChild;
+    btn.dataset.svc = id;
+    btn.id = `btn-${id}`;
+    if (confirm) {
+      btn.textContent = title;
+    } else {
+      btn.innerHTML = '<span class="btn-icon">⚡</span><span class="btn-label">' + title + '</span>';
+    }
+    if (!isPub && !accessible) {
+      if (currentUser) {
+        btn.classList.add('forbidden');
+        btn.disabled = true;
+      } else {
+        btn.classList.add('needs-login');
+        btn.textContent = '🔒 ' + title + (confirm ? '' : ' ⚡');
+        btn.addEventListener('click', (e) => { createRipple(e, btn); openLoginModal(allowedUsers); });
+      }
+    } else {
+      btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, title, timeout, confirm); });
+    }
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
+    });
+    return btn;
   }
 
   async function loadServices() {
@@ -248,31 +267,9 @@
       buttonsEl.innerHTML = '';
       const sectionOrder = [];
       const sectionMap = {};
-      services.forEach(({ id, title, timeout, confirm, section, public: isPub, accessible, allowedUsers }) => {
-        const btn = buttonTpl.cloneNode(true).firstElementChild;
-        btn.dataset.svc = id;
-        btn.id = `btn-${id}`;
-        if (confirm) {
-          btn.textContent = title;
-        } else {
-          btn.innerHTML = '<span class="btn-icon">⚡</span><span class="btn-label">' + title + '</span>';
-        }
-        if (!isPub && !accessible) {
-          if (currentUser) {
-            btn.classList.add('forbidden');
-            btn.disabled = true;
-          } else {
-            btn.classList.add('needs-login');
-            btn.textContent = confirm ? '🔒 ' + title : '🔒 ' + title + ' ⚡';
-            btn.addEventListener('click', (e) => { createRipple(e, btn); openLoginModal(allowedUsers); });
-          }
-        } else {
-          btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, title, timeout, confirm); });
-        }
-        btn.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
-        });
-        const key = section || '';
+      services.forEach((svc) => {
+        const btn = buildServiceButton(svc);
+        const key = svc.section || '';
         if (!sectionMap[key]) { sectionMap[key] = []; sectionOrder.push(key); }
         sectionMap[key].push(btn);
       });
@@ -280,10 +277,21 @@
         if (key) {
           buttonsEl.appendChild(renderSection(key, sectionMap[key]));
         } else {
-          sectionMap[key].forEach(btn => buttonsEl.appendChild(btn));
+          buttonsEl.append(...sectionMap[key]);
         }
       }
     } catch { buttonsEl.textContent = 'Failed to load services.'; }
+  }
+
+  function onBootstrap({ title, subtitle, users }, me) {
+    const siteTitle = document.getElementById('site-title');
+    const siteSub   = document.getElementById('site-subtitle');
+    siteTitle.textContent = title;
+    if (subtitle) { siteSub.textContent = subtitle; } else { siteSub.style.display = 'none'; }
+    allUsernames = users || [];
+    currentUser = me;
+    renderAuthArea();
+    loadServices();
   }
 
   // --- Init ---
@@ -349,20 +357,10 @@
     loginSubmitEl?.addEventListener('click', handleLogin);
     loginPasswordEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
 
-    siteTitle = document.getElementById('site-title');
-    siteSub   = document.getElementById('site-subtitle');
-
     Promise.all([
       fetch('/config').then(r => r.json()),
       fetch('/me').then(r => r.json()).catch(() => null),
-    ]).then(([{ title, subtitle, users }, me]) => {
-      siteTitle.textContent = title;
-      if (subtitle) { siteSub.textContent = subtitle; } else { siteSub.style.display = 'none'; }
-      allUsernames = users || [];
-      currentUser = me;
-      renderAuthArea();
-      loadServices();
-    });
+    ]).then(([config, me]) => onBootstrap(config, me));
   }
 
   window.__ui = { showToast, showConfirm, runService };

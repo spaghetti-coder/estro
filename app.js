@@ -9,8 +9,11 @@ const session = require('express-session');
 const bcrypt  = require('bcryptjs');
 
 const execP = promisify(exec);
+const CLIENT_TIMEOUT_BUFFER = 10000; // client AbortController fires after server timeout + this buffer
+const SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
 const cfg = yaml.load(fs.readFileSync(path.join(__dirname, 'config.yaml'), 'utf8'));
-const { hostname = '127.0.0.1', port = 3000, timeout = 60000, secret: cfgSecret } = cfg.config || {};
+const { hostname = '127.0.0.1', port = 3000, timeout: timeoutCfg = 60, secret: cfgSecret } = cfg.config || {};
+const timeout = timeoutCfg * 1000;
 const sessionSecret = cfgSecret || crypto.randomBytes(32).toString('hex');
 const services = [];
 for (const section of (cfg.sections || [])) {
@@ -22,18 +25,22 @@ const users = cfg.users || {};
 
 // --- Helpers ---
 
+function shellEscape(cmd) {
+  return cmd.replace(/'/g, "'\\''");
+}
+
 function buildCmd(command, remote) {
   const cmd = Array.isArray(command) ? command.join(' && ') : command;
   if (!remote) return cmd;
-  return `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${remote} '` + cmd.replace(/'/g, "'\\''") + "'";
+  return `ssh ${SSH_OPTS} ${remote} '` + shellEscape(cmd) + "'";
 }
 
 function getSvcTimeout(svc) {
-  return svc.timeout ?? timeout;
+  return svc.timeout != null ? svc.timeout * 1000 : timeout;
 }
 
 function resolveUsers(svc) {
-  const allowed = (svc.allowed && svc.allowed.length > 0) ? svc.allowed : svc._sectionAllowed || null;
+  const allowed = svc.allowed?.length ? svc.allowed : (svc._sectionAllowed ?? null);
   if (!allowed) return null;
   const result = new Set();
   for (const name of allowed) {
@@ -56,11 +63,11 @@ function listServices(req, res) {
     const allowedUsers = resolveUsers(svc);
     const isPublic = allowedUsers === null;
     return {
-      id: i, title: svc.title, timeout: getSvcTimeout(svc) + 10000,
+      id: i, title: svc.title, timeout: getSvcTimeout(svc) + CLIENT_TIMEOUT_BUFFER,
       confirm: svc.confirm !== false,
       section: svc._section || null,
       public: isPublic,
-      accessible: isPublic || (!!username && allowedUsers !== null && allowedUsers.includes(username)),
+      accessible: isPublic || (!!username && allowedUsers.includes(username)),
       allowedUsers,
     };
   });
