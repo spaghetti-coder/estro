@@ -370,7 +370,7 @@ body.light .section-group{
   transition:color var(--transition);
 }
 .section-header:hover{ color:var(--fg); }
-.section-header:focus{ outline:2px solid rgba(77,163,255,0.25); outline-offset:2px; }
+.section-header:focus-visible{ outline:2px solid rgba(77,163,255,0.25); outline-offset:2px; }
 body.light .section-header{ border-bottom-color:rgba(0,0,0,0.08); }
 .section-chevron{ display:inline-block; font-size:9px; transition:transform var(--transition); flex-shrink:0; }
 .section-header[aria-expanded="true"] .section-chevron{ transform:rotate(90deg); }
