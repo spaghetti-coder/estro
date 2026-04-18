@@ -307,6 +307,7 @@ body.light .gear-panel{ border-color:rgba(0,0,0,0.08); box-shadow:0 12px 32px rg
 body.light .gear-row:hover{ background:rgba(0,0,0,0.04); }
 .gear-label{ font-size:14px; color:var(--muted); }
 .auth-btn{ padding:6px 14px; font-size:14px; height:34px; border-radius:8px; white-space:nowrap; }
+.auth-btn--full{ width:100%; }
 .auth-username{ font-size:14px; color:var(--fg); font-weight:500; white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis; }
 
 /* login-required button — actionable, blue tint */
