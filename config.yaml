@@ -35,7 +35,7 @@ users:
     password: '$2y$10$JaMFMQSYcPFM9JtVvH4lSuMQTXoa/vtUgEKnafM.e78GuKiJRCmWi'
 
 config:
-  title: Commander                          # Defaults to 'Commander'
+  title: Estro                              # Defaults to 'Estro'
   subtitle: Execute commands from the web
   hostname: 0.0.0.0
   port: 3000

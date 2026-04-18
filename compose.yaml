@@ -1,9 +1,9 @@
 ---
 services:
-  commander:
-    image: ghcr.io/spaghetti-coder/commander:latest
+  estro:
+    image: ghcr.io/spaghetti-coder/estro:latest
     # build: .  # <- Uncomment for local builds
-    container_name: commander
+    container_name: estro
     restart: unless-stopped
     ports:
       - 3000:3000
@@ -11,8 +11,8 @@ services:
       # - ~/.ssh:/home/node/.ssh:ro   # <- To allow remote commands
       - ./config.yaml:/app/config.yaml:ro
     environment:
-      - PUID=${UID:-1000}
-      - PGID=${GID:-1000}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/config"]
       interval: 30s
