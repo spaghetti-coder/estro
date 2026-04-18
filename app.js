@@ -18,7 +18,7 @@ const sessionSecret = cfgSecret || crypto.randomBytes(32).toString('hex');
 const services = [];
 for (const section of (cfg.sections || [])) {
   for (const svc of (section.services || [])) {
-    services.push({ ...svc, _section: section.title, _sectionAllowed: section.allowed || null });
+    services.push({ ...svc, _section: section.title, _sectionAllowed: section.allowed || null, _sectionExpanded: section.expanded || false });
   }
 }
 const users = cfg.users || {};
@@ -66,6 +66,7 @@ function listServices(req, res) {
       id: i, title: svc.title, timeout: getSvcTimeout(svc) + CLIENT_TIMEOUT_BUFFER,
       confirm: svc.confirm !== false,
       section: svc._section || null,
+      sectionExpanded: svc._sectionExpanded || false,
       public: isPublic,
       accessible: isPublic || (!!username && allowedUsers.includes(username)),
       allowedUsers,

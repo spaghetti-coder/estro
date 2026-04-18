@@ -209,25 +209,30 @@
     }
   }
 
-  function renderSection(title, buttons) {
-    const expanded = localStorage.getItem(SECTION_KEY_PREFIX + title) === 'true';
+  function renderSection(title, buttons, pinned = false) {
+    const expanded = pinned || localStorage.getItem(SECTION_KEY_PREFIX + title) === 'true';
     const wrapper = document.createElement('div');
     wrapper.className = 'section-group';
     const header = document.createElement('button');
     header.type = 'button';
     header.className = 'section-header';
     header.setAttribute('aria-expanded', String(expanded));
-    header.innerHTML = '<span class="section-chevron" aria-hidden="true">▶</span>'
-      + '<span class="section-title">' + title + '</span>';
+    if (pinned) {
+      header.classList.add('section-header--pinned');
+      header.innerHTML = '<span class="section-title">' + title + '</span>';
+    } else {
+      header.innerHTML = '<span class="section-chevron" aria-hidden="true">▶</span>'
+        + '<span class="section-title">' + title + '</span>';
+      header.addEventListener('click', () => {
+        const nowCollapsed = body.classList.toggle('section-body--collapsed');
+        header.setAttribute('aria-expanded', String(!nowCollapsed));
+        localStorage.setItem(SECTION_KEY_PREFIX + title, String(!nowCollapsed));
+      });
+    }
     const body = document.createElement('div');
     body.className = 'section-body';
     if (!expanded) body.classList.add('section-body--collapsed');
     body.append(...buttons);
-    header.addEventListener('click', () => {
-      const nowCollapsed = body.classList.toggle('section-body--collapsed');
-      header.setAttribute('aria-expanded', String(!nowCollapsed));
-      localStorage.setItem(SECTION_KEY_PREFIX + title, String(!nowCollapsed));
-    });
     wrapper.append(header, body);
     return wrapper;
   }
@@ -267,15 +272,16 @@
       buttonsEl.innerHTML = '';
       const sectionOrder = [];
       const sectionMap = {};
+      const sectionPinnedMap = {};
       services.forEach((svc) => {
         const btn = buildServiceButton(svc);
         const key = svc.section || '';
-        if (!sectionMap[key]) { sectionMap[key] = []; sectionOrder.push(key); }
+        if (!sectionMap[key]) { sectionMap[key] = []; sectionOrder.push(key); sectionPinnedMap[key] = svc.sectionExpanded || false; }
         sectionMap[key].push(btn);
       });
       for (const key of sectionOrder) {
         if (key) {
-          buttonsEl.appendChild(renderSection(key, sectionMap[key]));
+          buttonsEl.appendChild(renderSection(key, sectionMap[key], sectionPinnedMap[key]));
         } else {
           buttonsEl.append(...sectionMap[key]);
         }

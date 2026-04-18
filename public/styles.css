@@ -63,6 +63,8 @@ body.light .site-header{
   flex-direction:column;
   gap:1px;
 }
+.site-title-row{ display:flex; align-items:center; gap:10px; }
+.site-logo{ width:32px; height:32px; flex-shrink:0; }
 .site-header h1{
   font-size:20px;
   font-weight:700;
@@ -371,6 +373,8 @@ body.light .section-group{
 }
 .section-header:hover{ color:var(--fg); }
 .section-header:focus-visible{ outline:2px solid rgba(77,163,255,0.25); outline-offset:2px; }
+.section-header--pinned{ cursor:default; }
+.section-header--pinned:hover{ color:var(--muted); }
 body.light .section-header{ border-bottom-color:rgba(0,0,0,0.08); }
 .section-chevron{ display:inline-block; font-size:9px; transition:transform var(--transition); flex-shrink:0; }
 .section-header[aria-expanded="true"] .section-chevron{ transform:rotate(90deg); }

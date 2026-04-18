@@ -17,6 +17,7 @@ sections:
         allowed: [parents]
 
   - title: Local
+    expanded: true
     services:
       - title: List /foo/bar
         command: >
