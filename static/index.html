@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Commander</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  </head>
+<body>
+  <main class="container" id="app">
+    <header class="header-row">
+      <div>
+        <h1>Commander</h1>
+        <div class="small">Execute commands from the web</div>
+      </div>
+      <div class="controls">
+        <label class="theme-toggle" id="themeToggleLabel">
+          <input id="themeToggle" type="checkbox" aria-label="Toggle theme" />
+          <span class="track" aria-hidden="true"></span>
+          <span class="knob" aria-hidden="true">🌙</span>
+        </label>
+      </div>
+    </header>
+
+    <section class="buttons" aria-label="Service controls">
+      <button class="btn" data-svc="openclaw" id="btn-openclaw">OpenClaw</button>
+      <button class="btn" data-svc="ollama" id="btn-ollama">Ollama (Docker)</button>
+    </section>
+
+    <div class="footer">You can execute commands from this page. Actions are logged on the server.</div>
+  </main>
+
+  <!-- modal -->
+  <div id="confirmModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-panel" role="document" tabindex="-1">
+      <header class="modal-header">
+        <span class="modal-icon" aria-hidden="true">⚠️</span>
+        <h2 id="modalTitle">Confirm the action</h2>
+      </header>
+      <div id="modalBody" class="modal-body">Are you sure?</div>
+      <footer class="modal-footer">
+        <button id="modalCancel" class="btn ghost">Cancel</button>
+        <button id="modalConfirm" class="btn primary">Confirm</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- toast area (aria-live) -->
+  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="/ui.js" defer></script>
+</body>
+</html>
