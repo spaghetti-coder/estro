@@ -74,10 +74,9 @@
       btn.addEventListener('click', handleLogout);
       authAreaEl.append(label, btn);
     } else {
-      const label = Object.assign(document.createElement('span'), { className: 'gear-label', textContent: 'Account' });
-      const btn = Object.assign(document.createElement('button'), { className: 'btn ghost auth-btn', textContent: 'Login' });
+      const btn = Object.assign(document.createElement('button'), { className: 'btn ghost auth-btn auth-btn--full', textContent: 'Login' });
       btn.addEventListener('click', () => openLoginModal(null));
-      authAreaEl.append(label, btn);
+      authAreaEl.append(btn);
     }
   }
 
