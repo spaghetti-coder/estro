@@ -1,0 +1,16 @@
+---
+services:
+  commander:
+    image: ghcr.io/spaghetti-coder/commander:latest
+    # build: .  # <- Uncomment for local builds
+    container_name: commander
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/config"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

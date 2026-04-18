@@ -1,0 +1,42 @@
+---
+sections:
+  - title: Remote
+    allowed: [papa]
+    services:
+      - title: List /var
+        command:
+          - cd /var
+          - ls -1
+        remote: my-remote-server  # <- Will be accessable over SSH
+        timeout: 60000
+      - title: List /opt
+        command:
+          - cd /opt
+          - ls -1
+        confirm: false    # Defaults to true
+        allowed: [parents]
+
+  - title: Local
+    services:
+      - title: List /foo/bar
+        command: >
+          cd /foo/bar && ls -1
+
+users:
+  papa:
+    # docker run --rm httpd htpasswd -bnBC 10 "" changeme | tr -d ':\n'; echo
+    password: '$2y$10$JaMFMQSYcPFM9JtVvH4lSuMQTXoa/vtUgEKnafM.e78GuKiJRCmWi'
+    # Optional
+    groups: [parents, admins]
+  mama:
+    password: '$2y$10$wHllG6IY8csGbD71DxDzxumH3udxWoiJ.Q5pP7SI7pndQdt2aabw2'
+    groups: [parents]
+  child1:
+    password: '$2y$10$JaMFMQSYcPFM9JtVvH4lSuMQTXoa/vtUgEKnafM.e78GuKiJRCmWi'
+
+config:
+  title: Commander                          # Defaults to 'Commander'
+  subtitle: Execute commands from the web
+  hostname: 0.0.0.0
+  port: 3000
+  timeout: 30000

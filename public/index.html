@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Commander</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+  <div class="site-header-inner">
+    <div class="site-header-left">
+      <h1 id="site-title"></h1>
+      <p id="site-subtitle" class="site-subtitle"></p>
+    </div>
+    <div class="site-header-right">
+      <div class="gear-wrap">
+        <button id="gearBtn" class="btn ghost gear-btn" type="button" aria-label="Settings" aria-expanded="false">⚙</button>
+        <div id="gearPanel" class="gear-panel" hidden>
+          <div id="authArea" class="gear-row"></div>
+          <div class="gear-row gear-row-theme">
+            <span class="gear-label">Theme</span>
+            <label class="theme-toggle">
+              <input id="themeToggle" type="checkbox" aria-label="Toggle theme" />
+              <span class="track" aria-hidden="true"></span>
+              <span class="knob" aria-hidden="true">🌙</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </header>
+
+  <main class="container" id="app">
+    <section class="buttons" aria-label="Service controls" id="buttons"></section>
+  </main>
+
+  <!-- modal -->
+  <div id="confirmModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-panel" role="document" tabindex="-1">
+      <header class="modal-header">
+        <span class="modal-icon" aria-hidden="true">⚠️</span>
+        <h2 id="modalTitle">Confirm the action</h2>
+      </header>
+      <div id="modalBody" class="modal-body">Are you sure?</div>
+      <footer class="modal-footer">
+        <button id="modalCancel" class="btn ghost">Cancel</button>
+        <button id="modalConfirm" class="btn primary">Confirm</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- login modal -->
+  <div id="loginModal" class="modal" role="dialog" aria-modal="true"
+       aria-labelledby="loginModalTitle" aria-hidden="true">
+    <div class="modal-panel login-modal-panel" role="document" tabindex="-1">
+      <header class="modal-header">
+        <span class="modal-icon" aria-hidden="true">🔐</span>
+        <h2 id="loginModalTitle">Login</h2>
+        <button id="loginModalClose" class="btn ghost modal-close-btn" type="button" aria-label="Close">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="userFilter">User</label>
+          <input id="userFilter" class="form-input" type="text" placeholder="Filter users…" autocomplete="off" />
+          <select id="userSelect" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" class="form-input" type="password" autocomplete="current-password" />
+        </div>
+        <div class="form-group form-group-inline">
+          <input id="rememberMe" type="checkbox" checked />
+          <label for="rememberMe">Remember me</label>
+        </div>
+        <div id="loginError" class="login-error" aria-live="assertive"></div>
+      </div>
+      <footer class="modal-footer">
+        <button id="loginSubmit" class="btn" type="button">Login</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- toast area (aria-live) -->
+  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
+
+  <template id="tpl-button">
+    <button class="btn"></button>
+  </template>
+
+  <template id="tpl-toast">
+    <div class="toast">
+      <span class="toast-icon"></span>
+      <span class="toast-message"></span>
+    </div>
+  </template>
+
+  <script src="/ui.js" defer></script>
+</body>
+</html>
