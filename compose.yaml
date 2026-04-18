@@ -8,7 +8,11 @@ services:
     ports:
       - 3000:3000
     volumes:
+      # - ~/.ssh:/home/node/.ssh:ro   # <- To allow remote commands
       - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - PUID=${UID:-1000}
+      - PGID=${GID:-1000}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/config"]
       interval: 30s

@@ -25,7 +25,7 @@ const users = cfg.users || {};
 function buildCmd(command, remote) {
   const cmd = Array.isArray(command) ? command.join(' && ') : command;
   if (!remote) return cmd;
-  return `ssh ${remote} '` + cmd.replace(/'/g, "'\\''") + "'";
+  return `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${remote} '` + cmd.replace(/'/g, "'\\''") + "'";
 }
 
 function getSvcTimeout(svc) {
