@@ -59,6 +59,7 @@ users:
 sections:
   - title: My Section
     allowed: [alice, admins]  # usernames or group names; omit for public
+    expanded: true            # always open, collapse disabled — defaults to false
     services:
       - title: Say hello
         command: echo hello
