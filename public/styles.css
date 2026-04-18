@@ -334,6 +334,16 @@ body.light .form-input{ background:#fff; border-color:rgba(0,0,0,0.12); }
 select.form-input{ cursor:pointer; }
 select.form-input option{ background:var(--card); }
 .login-error{ color:var(--error); font-size:13px; min-height:18px; margin-top:-6px; }
+.input-wrap{ position:relative; display:flex; }
+.input-wrap .form-input{ flex:1; padding-right:40px; }
+.input-eye{
+  position:absolute; right:0; top:0; bottom:0;
+  width:38px; background:transparent; border:none;
+  cursor:pointer; color:var(--muted);
+  display:flex; align-items:center; justify-content:center;
+  transition:color var(--transition);
+}
+.input-eye:hover{ color:var(--fg); }
 
 /* Collapsible sections */
 .section-group{

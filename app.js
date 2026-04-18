@@ -133,14 +133,14 @@ function init() {
     next();
   });
 
-  app.get('/config',    (_, res) => res.json({ title: cfg.config.title || 'Commander', subtitle: cfg.config.subtitle ?? '', users: Object.keys(users) }));
+  app.get('/config',    (_, res) => res.json({ title: cfg.config.title || 'Estro', subtitle: cfg.config.subtitle ?? '', users: Object.keys(users) }));
   app.get('/services',  listServices);
   app.get('/me',        getMe);
   app.post('/login',    login);
   app.post('/logout',   logout);
   app.post('/run/:svc', runService);
 
-  app.listen(port, hostname, () => console.log(`Commander listening on http://${hostname}:${port}`));
+  app.listen(port, hostname, () => console.log(`Estro listening on http://${hostname}:${port}`));
 }
 
 init();

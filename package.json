@@ -1,5 +1,5 @@
 {
-  "name": "home-commander",
+  "name": "estro",
   "version": "1.0.0",
   "description": "Web UI to evaluate commands",
   "main": "app.js",
