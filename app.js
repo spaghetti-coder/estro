@@ -11,7 +11,8 @@ const bcrypt  = require('bcryptjs');
 const execP = promisify(exec);
 const CLIENT_TIMEOUT_BUFFER = 10000; // client AbortController fires after server timeout + this buffer
 const SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
-const cfg = yaml.load(fs.readFileSync(path.join(__dirname, 'config.yaml'), 'utf8'));
+const configFile = ['config.yaml', 'config.yml'].find(f => fs.existsSync(path.join(__dirname, f))) || 'config.yaml';
+const cfg = yaml.load(fs.readFileSync(path.join(__dirname, configFile), 'utf8'));
 const { hostname = '127.0.0.1', port = 3000, timeout: timeoutCfg = 60, secret: cfgSecret } = cfg.config || {};
 const timeout = timeoutCfg * 1000;
 const sessionSecret = cfgSecret || crypto.randomBytes(32).toString('hex');
