@@ -7,11 +7,13 @@
   const FOCUS_DELAY_MS = 10;
   const RIPPLE_DURATION_MS = 600;
   const TOAST_ICONS = { success: '✓', error: '✕', info: 'ℹ' };
+  const TOAST_MAX_CHARS = 120;
   const pending = {};
 
   let body, checkbox, knob;
   let toastsEl, toastTpl;
   let modal, modalPanel, modalTitle;
+  let logsModalEl, logsModalPanel, logsStdoutEl, logsStderrEl, logsTabBtns;
   let modalResolve = null, lastActive = null;
   let buttonsEl, buttonTpl;
 
@@ -35,13 +37,53 @@
 
   // --- Toasts ---
 
-  function showToast(message, type = 'info', timeout = 4000) {
+  function showToast(message, type = 'info', { jobId } = {}) {
     const t = toastTpl.cloneNode(true).firstElementChild;
     if (type === 'success' || type === 'error') t.classList.add(type);
     t.querySelector('.toast-icon').textContent = TOAST_ICONS[type] || TOAST_ICONS.info;
-    t.querySelector('.toast-message').textContent = message;
+    const truncated = message.length > TOAST_MAX_CHARS ? message.slice(0, TOAST_MAX_CHARS) + '…' : message;
+    t.querySelector('.toast-message').textContent = truncated;
+    const logsBtn = t.querySelector('.toast-logs-btn');
+    if (jobId) {
+      logsBtn.addEventListener('click', () => openLogsModal(jobId));
+    } else {
+      logsBtn.remove();
+    }
+    t.querySelector('.toast-close-btn').addEventListener('click', () => t.remove());
+
+    let swipeStartX = null, swipePointerId = null;
+    t.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      swipeStartX = e.clientX;
+      swipePointerId = e.pointerId;
+      t.style.animation = 'none';
+      t.style.opacity = '1';
+      e.target.setPointerCapture(e.pointerId);
+    });
+    t.addEventListener('pointermove', (e) => {
+      if (swipeStartX === null || e.pointerId !== swipePointerId) return;
+      const dx = e.clientX - swipeStartX;
+      t.style.transform = `translateX(${dx}px)`;
+      t.style.opacity = String(Math.max(0, 1 - Math.abs(dx) / 150));
+    });
+    t.addEventListener('pointerup', (e) => {
+      if (swipeStartX === null || e.pointerId !== swipePointerId) return;
+      const dx = e.clientX - swipeStartX;
+      swipeStartX = swipePointerId = null;
+      if (Math.abs(dx) > 60) { t.remove(); return; }
+      t.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+      t.style.transform = 'translateY(0)';
+      t.style.opacity = '1';
+      t.addEventListener('transitionend', () => { t.style.transition = ''; }, { once: true });
+    });
+    t.addEventListener('pointercancel', (e) => {
+      if (e.pointerId !== swipePointerId) return;
+      swipeStartX = swipePointerId = null;
+      t.style.transform = 'translateY(0)';
+      t.style.opacity = '1';
+    });
+
     toastsEl.appendChild(t);
-    setTimeout(() => t.remove(), timeout);
   }
 
   // --- Modal helpers ---
@@ -195,10 +237,10 @@
       const pollRes = await fetch(`/jobs/${jobId}`);
       if (!pollRes.ok) throw new Error('Job lost');
       const job = await pollRes.json();
-      if (job.status === 'done') return `${job.title} done`;
-      if (job.status === 'error') throw new Error('Command failed');
+      if (job.status === 'done') return { message: `${job.title} done`, jobId };
+      if (job.status === 'error') throw Object.assign(new Error('Command failed'), { jobId });
     }
-    throw new Error('Request timed out');
+    throw Object.assign(new Error('Request timed out'), { jobId });
   }
 
   // --- Buttons ---
@@ -235,10 +277,10 @@
     pending[svc] = true;
     setButtonPending(btn, true);
     try {
-      const text = await runService(svc, timeout);
-      showToast(text, 'success', 6000);
+      const { message, jobId } = await runService(svc, timeout);
+      showToast(message, 'success', { jobId });
     } catch (err) {
-      showToast(err.message || 'Request failed', 'error', 8000);
+      showToast(err.message || 'Request failed', 'error', { jobId: err.jobId });
     } finally {
       delete pending[svc];
       setButtonPending(btn, false);
@@ -468,6 +510,23 @@
     fab.addEventListener('pointercancel', stopDrag);
   }
 
+  // --- Logs modal ---
+
+  function activateLogsTab(name) {
+    logsTabBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+    logsStdoutEl.hidden = name !== 'stdout';
+    logsStderrEl.hidden = name !== 'stderr';
+  }
+
+  async function openLogsModal(jobId) {
+    const res = await fetch(`/jobs/${jobId}`);
+    const job = res.ok ? await res.json() : {};
+    logsStdoutEl.textContent = job.stdout || '(empty)';
+    logsStderrEl.textContent = job.stderr || '(empty)';
+    activateLogsTab('stdout');
+    openModalEl(logsModalEl, logsModalPanel);
+  }
+
   function onBootstrap({ title, subtitle, users }, me) {
     const siteTitle = document.getElementById('site-title');
     const siteSub   = document.getElementById('site-subtitle');
@@ -537,6 +596,15 @@
 
     document.getElementById('loginModalClose')?.addEventListener('click', closeLoginModal);
     setupModalEvents(loginModal, closeLoginModal);
+
+    logsModalEl    = document.getElementById('logsModal');
+    logsModalPanel = logsModalEl?.querySelector('.modal-panel');
+    logsStdoutEl   = document.getElementById('logsStdout');
+    logsStderrEl   = document.getElementById('logsStderr');
+    logsTabBtns    = logsModalEl?.querySelectorAll('.logs-tab') ?? [];
+    logsTabBtns.forEach(btn => btn.addEventListener('click', () => activateLogsTab(btn.dataset.tab)));
+    document.getElementById('logsModalClose')?.addEventListener('click', () => closeModalEl(logsModalEl));
+    setupModalEvents(logsModalEl, () => closeModalEl(logsModalEl));
     userFilterEl?.addEventListener('input', () => populateUserSelect(userFilterEl.value));
     loginSubmitEl?.addEventListener('click', handleLogin);
     loginPasswordEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });

@@ -157,10 +157,10 @@ async function runService(req, res) {
       const { stdout, stderr } = await execP(cmd, { timeout: getSvcTimeout(entry) });
       logStream('STDOUT', stdout);
       logStream('STDERR', stderr, console.warn);
-      jobs.set(jobId, { status: 'done', title: entry.title });
+      jobs.set(jobId, { status: 'done', title: entry.title, stdout, stderr });
     } catch (error) {
       console.error(`Command error for ${entry.title}:`, error.stderr || error.message);
-      jobs.set(jobId, { status: 'error', title: entry.title });
+      jobs.set(jobId, { status: 'error', title: entry.title, stdout: error.stdout || '', stderr: error.stderr || error.message });
     } finally {
       setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
     }

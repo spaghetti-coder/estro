@@ -1,0 +1,9 @@
+node_modules
+.git
+.github
+config.yaml
+compose.yaml
+README.md
+.eslintrc.json
+.trivyignore
+.gitignore

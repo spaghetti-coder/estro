@@ -88,7 +88,7 @@ body.light .site-header{
   width:100%;
   max-width:1100px;
   margin:32px auto;
-  padding:0 16px;
+  padding:0 16px 32px;
 }
 
 /* theme toggle */
@@ -248,6 +248,10 @@ body.light .theme-toggle input:checked + .track + .knob{
   opacity:0;
   transform:translateY(8px);
   animation:toastIn .18s forwards;
+  position:relative;
+  overflow:visible;
+  touch-action:pan-y;
+  user-select:none;
 }
 .toast-icon{
   display:flex;
@@ -264,9 +268,27 @@ body.light .theme-toggle input:checked + .track + .knob{
 .toast.success .toast-icon{ background:var(--success); color:#fff; }
 .toast.error .toast-icon{ background:var(--error); color:#fff; }
 .toast:not(.success):not(.error) .toast-icon{ background:var(--accent); color:#fff; }
-.toast-message{ flex:1; }
+.toast-message{ flex:1; padding-right:4px; }
 .toast.success{ border-left:4px solid var(--success) }
 .toast.error{ border-left:4px solid var(--error) }
+.toast-close-btn,.toast-logs-btn{
+  position:absolute; top:-14px;
+  background:#0f1724; border:1px solid rgba(255,255,255,0.14);
+  color:var(--muted); cursor:pointer; line-height:1;
+  border-radius:20px; display:flex; align-items:center; justify-content:center;
+  padding:5px 9px; transition:color var(--transition),background var(--transition);
+}
+.toast-close-btn{ font-size:16px; right:6px; }
+.toast-logs-btn{ right:46px; }
+.toast-close-btn:hover,.toast-logs-btn:hover{ color:#fff; background:#1a2535; }
+
+/* logs modal */
+.logs-modal-panel{ max-width:640px; }
+.logs-tabs{ display:flex; gap:6px; margin:8px 0; }
+.logs-tab{ background:none; border:none; padding:4px 14px; border-radius:6px; cursor:pointer; color:var(--muted); font-size:13px; font-family:inherit; transition:background var(--transition),color var(--transition); }
+.logs-tab.active{ background:var(--accent); color:#fff; }
+.logs-tab:hover:not(.active){ background:rgba(255,255,255,0.06); color:var(--fg); }
+.logs-content{ font-family:ui-monospace,monospace; font-size:13px; white-space:pre-wrap; overflow-y:auto; max-height:360px; padding:10px 14px; background:var(--bg); border-radius:8px; color:var(--fg); border:1px solid rgba(255,255,255,0.06); }
 @keyframes toastIn{ to{ opacity:1; transform:none } }
 @keyframes toastIconPop{
   0%{ transform:scale(0); }
