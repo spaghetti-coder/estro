@@ -32,43 +32,62 @@ All configuration lives in a single `config.yaml` file.
 <p></p>
 
 ```yaml
-# Global config
-config:
-  title: Estro          # (Optional) Page title; defaults to 'Estro'
-  subtitle: string      # (Optional) Subtitle shown below title; omit to hide
-  hostname: 127.0.0.1   # (Optional) Bind address; defaults to 127.0.0.1
-  port: 3000            # (Optional) Port; defaults to 3000
-  timeout: 30           # (Optional) Default command timeout in seconds; defaults to 60
-  # secret: string      # (Optional) Session secret; random per restart if omitted
+global:
+  title: Estro           # browser tab title and page heading
+  subtitle: My home      # shown below the title; omit to hide
+  hostname: 0.0.0.0      # bind address; 0.0.0.0 = all interfaces
+  port: 3000
+  secret: changeme       # session secret; random per restart if omitted
+  # The fields below cascade: global → section → service (most specific wins)
+  timeout: 60            # command timeout in seconds
+  confirm: true          # ask for confirmation before running
+  allowed: [admins]      # who can use the app; omit or null = public
+  collapsable: true      # false = section is always open, no collapse chevron
+  remote: server.local   # run all commands on this host by default
+  columns: 3             # buttons per row on desktop (≥1024px); tablet caps at 2, mobile = 1
 
-# Users
 users:
   alice:
-    # Generated password with
-    #   docker run --rm httpd htpasswd -bnBC 10 "" YOUR_PASS | tr -d ':\n'; echo
-    password: '$2y$10$...'   # (Required) bcrypt hash
-    groups: [admins, family] # (Optional) Group memberships for use in `allowed`
+    password: '$2y$10$...'    # bcrypt hash — see below for how to generate
+    groups: [admins, family]  # optional; group names can be used in `allowed`
 
-# Services sections
-sections:                         # Top-level list of sections
-  - title: string                 # (Required) Section heading
-    allowed: [user, group, ...]   # (Optional) Restrict to these usernames/groups; omit for public
-    expanded: false               # (Optional) true = always open, collapse disabled
-    services:                     # List of buttons in this section
-      - title: string             # (Required) Button label
-        command: string|list      # (Required) Shell command — string or list of strings joined with &&
-        remote: user@host         # (Optional) Run over SSH instead of locally
-        timeout: 30               # (Optional) Timeout in seconds; overrides global default
-        confirm: true             # (Optional) Show confirmation dialog before running
-        allowed: [user, group]    # (Optional) Overrides section-level allowed for this service
+sections:
+  - title: My Section
+    allowed: [admins, alice]  # usernames or group names; omit = public
+    collapsable: false        # always open
+    columns: 2
+    timeout: 30               # overrides global for all services in this section
+    confirm: false
+    remote: user@host         # single host, or a jump chain (see SSH below)
+    services:
+      - title: My Button
+        command: echo hello   # single command, or a list joined with &&
+        command:              # multi-step form:
+          - echo step 1
+          - echo step 2
+        allowed: []           # explicit [] = public, overrides any parent restriction
+        timeout: 10
+        confirm: true
+        remote: other-host
 ```
 
-`allowed` values can be usernames or group names - groups are expanded from `users[].groups`. Omitting `allowed` on both section and service makes the service public.
+To generate a password hash:
+```sh
+docker run --rm httpd htpasswd -bnBC 10 "" YOUR_PASS | tr -d ':\n'; echo
+```
 </details>
 
 ### SSH
 
-Mount your SSH keys into the container:
+Add `remote: user@host` to run a command over SSH. For multi-hop access use a chain — each machine connects to the next using its own `~/.ssh` keys:
+
+```yaml
+remote: server.local                      # direct
+remote: [jump-host, target]               # via jump-host
+remote: [hop1, hop2, target]              # two hops
+```
+
+Mount your local SSH keys into the container so the first hop can authenticate:
 
 ```yaml
 volumes:
