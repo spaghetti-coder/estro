@@ -1,43 +1,91 @@
 ---
-sections:
-  - title: Remote
-    allowed: [papa]
-    services:
-      - title: List /var
-        command:
-          - cd /var
-          - ls -1
-        remote: my-remote-server  # <- Will be accessable over SSH
-        timeout: 60
-      - title: List /opt
-        command:
-          - cd /opt
-          - ls -1
-        confirm: false    # Defaults to true
-        allowed: [parents]
+# ---------------------------------------------------------------------------
+# Global server settings
+# ---------------------------------------------------------------------------
+config:
+  title: Estro                    # Browser tab title and page heading
+  subtitle: Home command centre   # Shown below the title; omit to hide
+  hostname: 0.0.0.0               # 0.0.0.0 = listen on all interfaces
+  port: 3000
+  timeout: 30                     # Default command timeout in seconds (default: 60)
+  # secret: changeme              # Session secret - random per restart by default
 
-  - title: Local
+# ---------------------------------------------------------------------------
+# Passwords are bcrypt hashes (cost factor 10 recommended). Generate a hash:
+#   docker run --rm httpd htpasswd -bnBC 10 "" PASS_PLACEHOLDER | tr -d ':\n'; echo
+#
+# Groups are optional. Use them in `allowed` fields to grant access to
+# multiple users at once.
+# ---------------------------------------------------------------------------
+users:
+  alice:      # Password: changeme1
+    password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
+    groups: [admins]
+  bob:        # Password: changeme2
+    password: '$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
+    groups: [family, admins]
+  guest:      # Password: changeme3
+    password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
+    # groups: []                    # no groups
+
+# ---------------------------------------------------------------------------
+# Sections group services visually. Each section can have its own access
+# control that applies to all services inside it (unless overridden per service).
+# ---------------------------------------------------------------------------
+sections:
+  # -------------------------------------------------------------------------
+  # A section with no `allowed` field is fully public — no login required.
+  # `expanded: true` means this section is always open and cannot be collapsed.
+  # -------------------------------------------------------------------------
+  - title: System Info
     expanded: true
     services:
-      - title: List /foo/bar
-        command: >
-          cd /foo/bar && ls -1
+      - title: Uptime
+        command: uptime
+      - title: Disk usage         # Multi-step commands run joined with &&
+        command:
+          - df -h /
+          - echo "---"
+          - df -h --total | tail -1
+      - title: Memory
+        command: free -h
+        confirm: false            # Skip action confirmation dialog
+      - title: Running processes
+        command: ps aux --sort=-%cpu | head -20
+        timeout: 10               # Per-service timeout in seconds
 
-users:
-  papa:
-    # docker run --rm httpd htpasswd -bnBC 10 "" changeme | tr -d ':\n'; echo
-    password: '$2y$10$JaMFMQSYcPFM9JtVvH4lSuMQTXoa/vtUgEKnafM.e78GuKiJRCmWi'
-    # Optional
-    groups: [parents, admins]
-  mama:
-    password: '$2y$10$wHllG6IY8csGbD71DxDzxumH3udxWoiJ.Q5pP7SI7pndQdt2aabw2'
-    groups: [parents]
-  child1:
-    password: '$2y$10$JaMFMQSYcPFM9JtVvH4lSuMQTXoa/vtUgEKnafM.e78GuKiJRCmWi'
+  # -------------------------------------------------------------------------
+  # A restricted section — only members of the `admins` group can see and run
+  # the services here. `allowed` accepts usernames and/or group names.
+  # -------------------------------------------------------------------------
+  - title: Admin
+    allowed: [admins]
+    services:
+      - title: List /etc
+        command: ls -lah /etc
+      - title: Reload nginx
+        command: sudo systemctl reload nginx
+      - title: Journal (last 50 lines)
+        command: journalctl -n 50 --no-pager
+        timeout: 15
 
-config:
-  title: Estro                              # Defaults to 'Estro'
-  subtitle: Execute commands from the web
-  hostname: 0.0.0.0
-  port: 3000
-  timeout: 30
+  # -------------------------------------------------------------------------
+  # Remote section — commands run on a remote host over SSH.
+  # Mount your SSH keys: ~/.ssh:/home/node/.ssh:ro in docker deployments
+  # -------------------------------------------------------------------------
+  - title: Remote
+    allowed: [admins, alice]
+    services:
+      - title: Remote uptime
+        command: uptime
+        remote: admin@my-server.local   # Targets user@host or just host
+        allowed: [guest]          # Only allowed for guest
+      - title: Remote disk
+        command: df -h /
+        remote: admin@my-server.local
+        confirm: false
+      - title: Remote journal
+        command: journalctl -n 100 --no-pager
+        remote: admin@my-server.local
+        timeout: 20
+        allowed: [admins]         # Only allowed for admins
