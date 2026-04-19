@@ -1,0 +1,2 @@
+# picomatch ReDoS in npm's bundled tinyglobby — not in our app, unexploitable in this context
+CVE-2026-33671

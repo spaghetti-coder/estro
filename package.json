@@ -5,11 +5,13 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "node --watch app.js"
+    "dev": "node --watch app.js",
+    "lint": "npx eslint app.js public/ui.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.3.2",
     "express-session": "^1.18.1",
     "js-yaml": "^4.1.0"
   },
