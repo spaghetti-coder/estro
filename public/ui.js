@@ -1,6 +1,7 @@
 (() => {
   const THEME_KEY = 'ui:theme';
   const SECTION_KEY_PREFIX = 'section:';
+  const FAB_KEY = 'fab:pos';
   const TOAST_ICONS = { success: '✓', error: '✕', info: 'ℹ' };
   const pending = {};
 
@@ -209,32 +210,47 @@
     }
   }
 
-  function renderSection(title, buttons, pinned = false) {
-    const expanded = pinned || localStorage.getItem(SECTION_KEY_PREFIX + title) === 'true';
+  function getSectionCols(configured) {
+    const w = window.innerWidth;
+    if (w >= 1024) return configured;
+    if (w >= 640) return Math.min(configured, 2);
+    return 1;
+  }
+
+  function renderSection(title, buttons, collapsable, columns) {
+    const storedExpanded = localStorage.getItem(SECTION_KEY_PREFIX + title);
+    const expanded = !collapsable || storedExpanded === 'true';
     const wrapper = document.createElement('div');
     wrapper.className = 'section-group';
+
     const header = document.createElement('button');
     header.type = 'button';
     header.className = 'section-header';
     header.setAttribute('aria-expanded', String(expanded));
-    if (pinned) {
+
+    if (!collapsable) {
       header.classList.add('section-header--pinned');
       header.innerHTML = '<span class="section-title">' + title + '</span>';
     } else {
       header.innerHTML = '<span class="section-chevron" aria-hidden="true">▶</span>'
         + '<span class="section-title">' + title + '</span>';
       header.addEventListener('click', () => {
-        const nowCollapsed = body.classList.toggle('section-body--collapsed');
-        header.setAttribute('aria-expanded', String(!nowCollapsed));
-        localStorage.setItem(SECTION_KEY_PREFIX + title, String(!nowCollapsed));
+        const isExpanded = header.getAttribute('aria-expanded') === 'true';
+        const nowExpanded = !isExpanded;
+        header.setAttribute('aria-expanded', String(nowExpanded));
+        sectionBody.classList.toggle('section-body--collapsed', !nowExpanded);
+        localStorage.setItem(SECTION_KEY_PREFIX + title, String(nowExpanded));
       });
     }
-    const body = document.createElement('div');
-    body.className = 'section-body';
-    if (!expanded) body.classList.add('section-body--collapsed');
-    body.append(...buttons);
-    wrapper.append(header, body);
-    return wrapper;
+
+    const sectionBody = document.createElement('div');
+    sectionBody.className = 'section-body';
+    if (!expanded) sectionBody.classList.add('section-body--collapsed');
+    sectionBody.style.setProperty('--cols', getSectionCols(columns));
+
+    sectionBody.append(...buttons);
+    wrapper.append(header, sectionBody);
+    return { wrapper, header, sectionBody, collapsable, title, columns };
   }
 
   function buildServiceButton({ id, title, timeout, confirm, public: isPub, accessible, allowedUsers }) {
@@ -264,29 +280,124 @@
     return btn;
   }
 
+  // track rendered sections for collapse/expand all
+  let renderedSections = [];
+
   async function loadServices() {
     try {
       const res = await fetch('/services');
       if (!res.ok) throw new Error('Failed to load services');
       const services = await res.json();
       buttonsEl.innerHTML = '';
+      renderedSections = [];
       const sectionOrder = [];
       const sectionMap = {};
-      const sectionPinnedMap = {};
+      const sectionMeta = {};
       services.forEach((svc) => {
         const btn = buildServiceButton(svc);
         const key = svc.section || '';
-        if (!sectionMap[key]) { sectionMap[key] = []; sectionOrder.push(key); sectionPinnedMap[key] = svc.sectionExpanded || false; }
+        if (!sectionMap[key]) {
+          sectionMap[key] = [];
+          sectionOrder.push(key);
+          sectionMeta[key] = { collapsable: svc.sectionCollapsable, columns: svc.sectionColumns };
+        }
         sectionMap[key].push(btn);
       });
       for (const key of sectionOrder) {
         if (key) {
-          buttonsEl.appendChild(renderSection(key, sectionMap[key], sectionPinnedMap[key]));
+          const meta = sectionMeta[key];
+          const section = renderSection(key, sectionMap[key], meta.collapsable !== false, meta.columns || 3);
+          buttonsEl.appendChild(section.wrapper);
+          renderedSections.push(section);
         } else {
           buttonsEl.append(...sectionMap[key]);
         }
       }
     } catch { buttonsEl.textContent = 'Failed to load services.'; }
+  }
+
+  // --- Collapse / Expand all FABs ---
+
+  const SVG_COLLAPSE = '<svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,3 8,8 13,3"/><line x1="3" y1="10" x2="13" y2="10" stroke-dasharray="2,2"/><polyline points="3,17 8,12 13,17"/></svg>';
+  const SVG_EXPAND   = '<svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 8,3 13,8"/><line x1="3" y1="10" x2="13" y2="10" stroke-dasharray="2,2"/><polyline points="3,12 8,17 13,12"/></svg>';
+  const DRAG_THRESHOLD = 5;
+
+  function initFab() {
+    const fab = document.createElement('div');
+    fab.className = 'fab-group';
+
+    const collapseBtn = Object.assign(document.createElement('button'), { className: 'fab-btn', type: 'button', title: 'Collapse all', innerHTML: SVG_COLLAPSE });
+    const expandBtn   = Object.assign(document.createElement('button'), { className: 'fab-btn', type: 'button', title: 'Expand all',   innerHTML: SVG_EXPAND });
+    fab.append(expandBtn, collapseBtn);
+    document.body.appendChild(fab);
+
+    const saved = JSON.parse(localStorage.getItem(FAB_KEY) || 'null');
+    let side = saved?.side || 'right';
+    let topPct = saved?.topPct ?? 50;
+
+    function applyPos() {
+      const cr = document.querySelector('.container')?.getBoundingClientRect() ?? { left: 0, right: window.innerWidth };
+      const fabW = fab.offsetWidth || 44;
+      fab.style.top = topPct + '%';
+      fab.style.transform = 'translateY(-50%)';
+      fab.style.removeProperty('left');
+      fab.style.removeProperty('right');
+      if (side === 'left') {
+        fab.style.left = Math.max(0, cr.left - fabW - 8) + 'px';
+      } else {
+        fab.style.right = Math.max(0, window.innerWidth - cr.right - fabW - 8) + 'px';
+      }
+    }
+    requestAnimationFrame(applyPos);
+    window.addEventListener('resize', applyPos, { passive: true });
+
+    function setAllSections(expand) {
+      renderedSections.forEach(({ header, sectionBody, collapsable, title }) => {
+        if (!expand && !collapsable) return;
+        header.setAttribute('aria-expanded', String(expand));
+        sectionBody.classList.toggle('section-body--collapsed', !expand);
+        localStorage.setItem(SECTION_KEY_PREFIX + title, String(expand));
+      });
+    }
+
+    // whole block is drag handle; short tap fires action on whichever button was pressed
+    let downTarget = null, startX = 0, startY = 0, startTopPx = 0, didDrag = false;
+
+    fab.addEventListener('pointerdown', (e) => {
+      downTarget = e.target;
+      startX = e.clientX;
+      startY = e.clientY;
+      startTopPx = (topPct / 100) * window.innerHeight;
+      didDrag = false;
+      fab.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    fab.addEventListener('pointermove', (e) => {
+      if (!fab.hasPointerCapture(e.pointerId)) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!didDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      didDrag = true;
+      const newTopPx = Math.max(0, Math.min(window.innerHeight, startTopPx + dy));
+      topPct = (newTopPx / window.innerHeight) * 100;
+      side = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+      applyPos();
+    });
+
+    function stopDrag(e) {
+      if (!fab.hasPointerCapture(e.pointerId)) return;
+      fab.releasePointerCapture(e.pointerId);
+      if (!didDrag) {
+        if (collapseBtn.contains(downTarget)) setAllSections(false);
+        else if (expandBtn.contains(downTarget)) setAllSections(true);
+      } else {
+        localStorage.setItem(FAB_KEY, JSON.stringify({ side, topPct }));
+      }
+      downTarget = null;
+      didDrag = false;
+    }
+    fab.addEventListener('pointerup', stopDrag);
+    fab.addEventListener('pointercancel', stopDrag);
   }
 
   function onBootstrap({ title, subtitle, users }, me) {
@@ -362,6 +473,14 @@
     userFilterEl?.addEventListener('input', () => populateUserSelect(userFilterEl.value));
     loginSubmitEl?.addEventListener('click', handleLogin);
     loginPasswordEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+
+    window.addEventListener('resize', () => {
+      renderedSections.forEach(({ sectionBody, columns }) => {
+        sectionBody.style.setProperty('--cols', getSectionCols(columns));
+      });
+    }, { passive: true });
+
+    initFab();
 
     Promise.all([
       fetch('/config').then(r => r.json()),

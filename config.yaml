@@ -1,91 +1,160 @@
 ---
 # ---------------------------------------------------------------------------
-# Global server settings
+# global: server + cascade defaults (all fields optional)
+#   title, subtitle   — page heading
+#   hostname, port    — bind address (default 127.0.0.1:3000)
+#   secret            — session secret (random per restart if omitted)
+#   timeout           — default command timeout in seconds (default: 60)
+#   confirm           — show confirm dialog before running (default: true)
+#   allowed           — who can see/run anything; null = public (default: null)
+#   collapsable       — sections can be collapsed (default: true)
+#   remote            — run all commands on this host by default (default: local)
+#   columns           — buttons per row on desktop ≥1024px (default: 3)
 # ---------------------------------------------------------------------------
-config:
-  title: Estro                    # Browser tab title and page heading
-  subtitle: Home command centre   # Shown below the title; omit to hide
-  hostname: 0.0.0.0               # 0.0.0.0 = listen on all interfaces
+global:
+  title: Estro
+  subtitle: Config test suite
+  hostname: 0.0.0.0
   port: 3000
-  timeout: 30                     # Default command timeout in seconds (default: 60)
-  # secret: changeme              # Session secret - random per restart by default
+  timeout: 30
+  confirm: true
+  # allowed: [admins]   # uncomment to lock down the whole app
 
 # ---------------------------------------------------------------------------
-# Passwords are bcrypt hashes (cost factor 10 recommended). Generate a hash:
-#   docker run --rm httpd htpasswd -bnBC 10 "" PASS_PLACEHOLDER | tr -d ':\n'; echo
-#
-# Groups are optional. Use them in `allowed` fields to grant access to
-# multiple users at once.
+# users: bcrypt hashes (cost 10). Groups are optional.
+# Generate: docker run --rm httpd htpasswd -bnBC 10 "" PASS | tr -d ':\n'
 # ---------------------------------------------------------------------------
 users:
-  alice:      # Password: changeme1
+  alice:                  # Password: changeme1
     password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
     groups: [admins]
-  bob:        # Password: changeme2
+  bob:                    # Password: changeme2
     password: '$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
-    groups: [family, admins]
-  guest:      # Password: changeme3
+    groups: [admins, family]
+  guest:                  # Password: changeme3
     password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
-    # groups: []                    # no groups
 
 # ---------------------------------------------------------------------------
-# Sections group services visually. Each section can have its own access
-# control that applies to all services inside it (unless overridden per service).
+# sections: groups of services.
+# Section-level fields cascade to all services inside (service value wins).
+# collapsable / columns do not apply at service level.
 # ---------------------------------------------------------------------------
 sections:
-  # -------------------------------------------------------------------------
-  # A section with no `allowed` field is fully public — no login required.
-  # `expanded: true` means this section is always open and cannot be collapsed.
-  # -------------------------------------------------------------------------
-  - title: System Info
-    expanded: true
+
+  # --- Public, always open, single-column -----------------------------------
+  # collapsable: false  → no chevron, always expanded
+  # columns: 1          → one button per row
+  - title: Public Info
+    collapsable: false
+    columns: 1
     services:
-      - title: Uptime
+      - title: Uptime          # confirm inherits global true
         command: uptime
-      - title: Disk usage         # Multi-step commands run joined with &&
+      - title: Date
+        command: date
+        confirm: false         # override: no dialog for this service
+
+  # --- Public, collapsable, default 3 columns --------------------------------
+  # No allowed → public. No columns → inherits global default (3).
+  - title: System
+    services:
+      - title: Disk usage
         command:
-          - df -h /
+          - df -h /            # multi-step: joined with &&
           - echo "---"
           - df -h --total | tail -1
       - title: Memory
         command: free -h
-        confirm: false            # Skip action confirmation dialog
-      - title: Running processes
-        command: ps aux --sort=-%cpu | head -20
-        timeout: 10               # Per-service timeout in seconds
+        confirm: false
+      - title: CPU
+        command: ps aux --sort=-%cpu | head -10
+        timeout: 10            # service-level timeout overrides section + global
+      - title: Load
+        command: cat /proc/loadavg
+        confirm: false
 
-  # -------------------------------------------------------------------------
-  # A restricted section — only members of the `admins` group can see and run
-  # the services here. `allowed` accepts usernames and/or group names.
-  # -------------------------------------------------------------------------
+  # --- Section-level timeout + confirm override, 2 columns ------------------
+  - title: Logs
+    timeout: 15                # all services in this section default to 15s
+    confirm: false             # all services skip dialog unless overridden
+    columns: 2
+    services:
+      - title: Syslog (20)
+        command: journalctl -n 20 --no-pager
+      - title: Kernel log
+        command: dmesg | tail -20
+      - title: Auth log
+        command: journalctl -n 20 -u ssh --no-pager
+        confirm: true          # override section confirm back on
+        timeout: 5             # override section timeout
+
+  # --- Restricted to admins group, 4 columns ---------------------------------
+  # allowed: [admins] → only alice and bob can see/run
   - title: Admin
     allowed: [admins]
+    columns: 4
     services:
       - title: List /etc
         command: ls -lah /etc
+      - title: Who
+        command: who
+        confirm: false
+      - title: Processes
+        command: ps aux | head -20
+        confirm: false
+      - title: Routes
+        command: ip route
+        confirm: false
       - title: Reload nginx
         command: sudo systemctl reload nginx
-      - title: Journal (last 50 lines)
-        command: journalctl -n 50 --no-pager
-        timeout: 15
+      - title: Disk inodes
+        command: df -i
+        confirm: false
 
-  # -------------------------------------------------------------------------
-  # Remote section — commands run on a remote host over SSH.
-  # Mount your SSH keys: ~/.ssh:/home/node/.ssh:ro in docker deployments
-  # -------------------------------------------------------------------------
-  - title: Remote
-    allowed: [admins, alice]
+  # --- Mixed access: section restricts, one service overrides to public ------
+  # allowed: []  on a service = explicit empty = public (overrides parent)
+  - title: Mixed Access
+    allowed: [admins]
+    services:
+      - title: Public status   # explicit [] overrides section restriction
+        command: uptime
+        allowed: []
+        confirm: false
+      - title: Admin only
+        command: id
+                               # inherits allowed: [admins] from section
+      - title: Guest allowed   # specific user, not group
+        command: date
+        allowed: [guest]
+
+  # --- Remote: single host ---------------------------------------------------
+  # remote: host    → ssh to host, then run command
+  - title: Remote (single hop)
+    allowed: [admins]
+    remote: server1.local
+    confirm: false
     services:
       - title: Remote uptime
         command: uptime
-        remote: server1.local     # Targets user@host or just host
-        allowed: [guest]          # Only allowed for guest
       - title: Remote disk
         command: df -h /
-        remote: admin@server2.local
+      - title: Local override  # remote: null not supported; omit to use section remote
+        command: hostname       # still runs on server1.local via section cascade
+        allowed: [admins, guest]
+
+  # --- Remote: SSH chain (multi-hop) ----------------------------------------
+  # remote: [host1, host2] → ssh host1, then ssh host2, then run
+  - title: Remote (chain)
+    allowed: [admins]
+    collapsable: false
+    columns: 2
+    services:
+      - title: Two-hop uptime
+        command: uptime
+        remote: [server1.local, server2.local]
         confirm: false
-      - title: Remote journal
-        command: journalctl -n 100 --no-pager
-        remote: server1.local
+      - title: Three-hop date
+        command: date
+        remote: [server1.local, server2.local, server3.local]
+        confirm: false
         timeout: 20
-        allowed: [admins]         # Only allowed for admins

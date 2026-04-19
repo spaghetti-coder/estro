@@ -13,13 +13,22 @@ const CLIENT_TIMEOUT_BUFFER = 10000; // client AbortController fires after serve
 const SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
 const configFile = ['config.yaml', 'config.yml'].find(f => fs.existsSync(path.join(__dirname, f))) || 'config.yaml';
 const cfg = yaml.load(fs.readFileSync(path.join(__dirname, configFile), 'utf8'));
-const { hostname = '127.0.0.1', port = 3000, timeout: timeoutCfg = 60, secret: cfgSecret } = cfg.config || {};
-const timeout = timeoutCfg * 1000;
+const globalCfg = cfg.global || {};
+const { hostname = '127.0.0.1', port = 3000, secret: cfgSecret } = globalCfg;
 const sessionSecret = cfgSecret || crypto.randomBytes(32).toString('hex');
 const services = [];
 for (const section of (cfg.sections || [])) {
   for (const svc of (section.services || [])) {
-    services.push({ ...svc, _section: section.title, _sectionAllowed: section.allowed || null, _sectionExpanded: section.expanded || false });
+    services.push({
+      ...svc,
+      _section: section.title,
+      _secTimeout: section.timeout,
+      _secConfirm: section.confirm,
+      _secAllowed: section.allowed,
+      _secCollapsable: section.collapsable,
+      _secRemote: section.remote,
+      _secColumns: section.columns,
+    });
   }
 }
 const users = cfg.users || {};
@@ -33,16 +42,28 @@ function shellEscape(cmd) {
 function buildCmd(command, remote) {
   const cmd = Array.isArray(command) ? command.join(' && ') : command;
   if (!remote) return cmd;
-  return `ssh ${SSH_OPTS} ${remote} '` + shellEscape(cmd) + "'";
+  const hosts = Array.isArray(remote) ? remote : [remote];
+  if (hosts.length === 0) return cmd;
+  return hosts.reduceRight((innerCmd, host) => {
+    return `ssh ${SSH_OPTS} ${host} '${shellEscape(innerCmd)}'`;
+  }, cmd);
+}
+
+function cascadeField(svc, field, builtinDefault) {
+  if (svc[field] !== undefined) return svc[field];
+  const secKey = '_sec' + field.charAt(0).toUpperCase() + field.slice(1);
+  if (svc[secKey] !== undefined) return svc[secKey];
+  if (globalCfg[field] !== undefined) return globalCfg[field];
+  return builtinDefault;
 }
 
 function getSvcTimeout(svc) {
-  return svc.timeout != null ? svc.timeout * 1000 : timeout;
+  return cascadeField(svc, 'timeout', 60) * 1000;
 }
 
 function resolveUsers(svc) {
-  const allowed = svc.allowed?.length ? svc.allowed : (svc._sectionAllowed ?? null);
-  if (!allowed) return null;
+  const allowed = cascadeField(svc, 'allowed', null);
+  if (allowed === null || allowed.length === 0) return null;
   const result = new Set();
   for (const name of allowed) {
     if (users[name]) {
@@ -64,10 +85,13 @@ function listServices(req, res) {
     const allowedUsers = resolveUsers(svc);
     const isPublic = allowedUsers === null;
     return {
-      id: i, title: svc.title, timeout: getSvcTimeout(svc) + CLIENT_TIMEOUT_BUFFER,
-      confirm: svc.confirm !== false,
+      id: i,
+      title: svc.title,
+      timeout: getSvcTimeout(svc) + CLIENT_TIMEOUT_BUFFER,
+      confirm: cascadeField(svc, 'confirm', true),
       section: svc._section || null,
-      sectionExpanded: svc._sectionExpanded || false,
+      sectionCollapsable: cascadeField(svc, 'collapsable', true),
+      sectionColumns: cascadeField(svc, 'columns', 3),
       public: isPublic,
       accessible: isPublic || (!!username && allowedUsers.includes(username)),
       allowedUsers,
@@ -83,7 +107,8 @@ async function runService(req, res) {
   const allowed = resolveUsers(entry);
   if (allowed !== null && !allowed.includes(req.session?.user)) return res.status(403).send('Forbidden');
 
-  const cmd = buildCmd(entry.command, entry.remote);
+  const remote = cascadeField(entry, 'remote', null);
+  const cmd = buildCmd(entry.command, remote);
   try {
     console.log(`Running ${entry.title}: ${cmd}`);
     const { stdout, stderr } = await execP(cmd, { timeout: getSvcTimeout(entry) });
@@ -142,7 +167,7 @@ function init() {
     next();
   });
 
-  app.get('/config',    (_, res) => res.json({ title: cfg.config.title || 'Estro', subtitle: cfg.config.subtitle ?? '', users: Object.keys(users) }));
+  app.get('/config',    (_, res) => res.json({ title: globalCfg.title || 'Estro', subtitle: globalCfg.subtitle ?? '', users: Object.keys(users) }));
   app.get('/services',  listServices);
   app.get('/me',        getMe);
   app.post('/login',    login);
