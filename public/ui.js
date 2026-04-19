@@ -183,19 +183,22 @@
   // --- API ---
 
   async function runService(svc, timeoutMs = 15000) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(`/run/${svc}`, { method: 'POST', signal: controller.signal });
-      const txt = await res.text().catch(() => res.statusText || '');
-      if (res.status === 401) throw new Error('Authentication required');
-      if (res.status === 403) throw new Error('Access denied');
-      if (!res.ok) throw new Error(txt || res.statusText || 'Server error');
-      return txt || `${svc} done`;
-    } catch (err) {
-      if (err.name === 'AbortError') throw new Error('Request timed out');
-      throw err;
-    } finally { clearTimeout(id); }
+    const startRes = await fetch(`/run/${svc}`, { method: 'POST' });
+    if (startRes.status === 401) throw new Error('Authentication required');
+    if (startRes.status === 403) throw new Error('Access denied');
+    if (!startRes.ok) throw new Error(await startRes.text().catch(() => startRes.statusText) || 'Server error');
+    const { jobId } = await startRes.json();
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000));
+      const pollRes = await fetch(`/jobs/${jobId}`);
+      if (!pollRes.ok) throw new Error('Job lost');
+      const job = await pollRes.json();
+      if (job.status === 'done') return `${job.title} done`;
+      if (job.status === 'error') throw new Error('Command failed');
+    }
+    throw new Error('Request timed out');
   }
 
   // --- Buttons ---
