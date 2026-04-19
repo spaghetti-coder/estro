@@ -8,7 +8,11 @@
   const RIPPLE_DURATION_MS = 600;
   const TOAST_ICONS = { success: '✓', error: '✕', info: 'ℹ' };
   const TOAST_MAX_CHARS = 120;
-  const pending = {};
+  const pending = new Map();
+
+  function makeEl(tag, props) {
+    return Object.assign(document.createElement(tag), props);
+  }
 
   let body, checkbox, knob;
   let toastsEl, toastTpl;
@@ -37,6 +41,40 @@
 
   // --- Toasts ---
 
+  function attachSwipeToDismiss(el) {
+    let swipeStartX = null, swipePointerId = null;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      swipeStartX = e.clientX;
+      swipePointerId = e.pointerId;
+      el.style.animation = 'none';
+      el.style.opacity = '1';
+      e.target.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (swipeStartX === null || e.pointerId !== swipePointerId) return;
+      const dx = e.clientX - swipeStartX;
+      el.style.transform = `translateX(${dx}px)`;
+      el.style.opacity = String(Math.max(0, 1 - Math.abs(dx) / 150));
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (swipeStartX === null || e.pointerId !== swipePointerId) return;
+      const dx = e.clientX - swipeStartX;
+      swipeStartX = swipePointerId = null;
+      if (Math.abs(dx) > 60) { el.remove(); return; }
+      el.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+      el.style.transform = 'translateY(0)';
+      el.style.opacity = '1';
+      el.addEventListener('transitionend', () => { el.style.transition = ''; }, { once: true });
+    });
+    el.addEventListener('pointercancel', (e) => {
+      if (e.pointerId !== swipePointerId) return;
+      swipeStartX = swipePointerId = null;
+      el.style.transform = 'translateY(0)';
+      el.style.opacity = '1';
+    });
+  }
+
   function showToast(message, type = 'info', { jobId } = {}) {
     const t = toastTpl.cloneNode(true).firstElementChild;
     if (type === 'success' || type === 'error') t.classList.add(type);
@@ -50,39 +88,7 @@
       logsBtn.remove();
     }
     t.querySelector('.toast-close-btn').addEventListener('click', () => t.remove());
-
-    let swipeStartX = null, swipePointerId = null;
-    t.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button')) return;
-      swipeStartX = e.clientX;
-      swipePointerId = e.pointerId;
-      t.style.animation = 'none';
-      t.style.opacity = '1';
-      e.target.setPointerCapture(e.pointerId);
-    });
-    t.addEventListener('pointermove', (e) => {
-      if (swipeStartX === null || e.pointerId !== swipePointerId) return;
-      const dx = e.clientX - swipeStartX;
-      t.style.transform = `translateX(${dx}px)`;
-      t.style.opacity = String(Math.max(0, 1 - Math.abs(dx) / 150));
-    });
-    t.addEventListener('pointerup', (e) => {
-      if (swipeStartX === null || e.pointerId !== swipePointerId) return;
-      const dx = e.clientX - swipeStartX;
-      swipeStartX = swipePointerId = null;
-      if (Math.abs(dx) > 60) { t.remove(); return; }
-      t.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-      t.style.transform = 'translateY(0)';
-      t.style.opacity = '1';
-      t.addEventListener('transitionend', () => { t.style.transition = ''; }, { once: true });
-    });
-    t.addEventListener('pointercancel', (e) => {
-      if (e.pointerId !== swipePointerId) return;
-      swipeStartX = swipePointerId = null;
-      t.style.transform = 'translateY(0)';
-      t.style.opacity = '1';
-    });
-
+    attachSwipeToDismiss(t);
     toastsEl.appendChild(t);
   }
 
@@ -103,7 +109,7 @@
     blurIfInside(el);
     el.setAttribute('aria-hidden', 'true');
     body.classList.remove('modal-open');
-    try { lastActive?.focus(); } catch (e) {}
+    lastActive?.focus({ preventScroll: true });
     lastActive = null;
   }
 
@@ -134,12 +140,12 @@
     gearBtn.classList.toggle('logged-in', !!currentUser);
     authAreaEl.innerHTML = '';
     if (currentUser) {
-      const label = Object.assign(document.createElement('span'), { className: 'gear-label auth-username', textContent: currentUser.username });
-      const btn = Object.assign(document.createElement('button'), { className: 'btn ghost auth-btn', textContent: 'Logout' });
+      const label = makeEl('span', { className: 'gear-label auth-username', textContent: currentUser.username });
+      const btn = makeEl('button', { className: 'btn ghost auth-btn', textContent: 'Logout' });
       btn.addEventListener('click', handleLogout);
       authAreaEl.append(label, btn);
     } else {
-      const btn = Object.assign(document.createElement('button'), { className: 'btn ghost auth-btn auth-btn--full', textContent: 'Login' });
+      const btn = makeEl('button', { className: 'btn ghost auth-btn auth-btn--full', textContent: 'Login' });
       btn.addEventListener('click', () => openLoginModal(null));
       authAreaEl.append(btn);
     }
@@ -152,7 +158,7 @@
     const pool = loginForUsers || allUsernames;
     userSelectEl.innerHTML = '';
     pool.filter(u => u.toLowerCase().includes(lower)).forEach(u => {
-      const opt = Object.assign(document.createElement('option'), { value: u, textContent: u });
+      const opt = makeEl('option', { value: u, textContent: u });
       userSelectEl.appendChild(opt);
     });
     if (userSelectEl.options.length === 1) userSelectEl.selectedIndex = 0;
@@ -174,11 +180,15 @@
     loginForUsers = null;
   }
 
+  function refreshAuth() {
+    renderAuthArea();
+    loadServices();
+  }
+
   function onLoginSuccess(data) {
     currentUser = { username: data.username, groups: [] };
     closeLoginModal();
-    renderAuthArea();
-    loadServices();
+    refreshAuth();
   }
 
   function onLoginError(err) {
@@ -218,8 +228,7 @@
       return;
     }
     currentUser = null;
-    renderAuthArea();
-    loadServices();
+    refreshAuth();
   }
 
   // --- API ---
@@ -228,7 +237,10 @@
     const startRes = await fetch(`/run/${svc}`, { method: 'POST' });
     if (startRes.status === 401) throw new Error('Authentication required');
     if (startRes.status === 403) throw new Error('Access denied');
-    if (!startRes.ok) throw new Error(await startRes.text().catch(() => startRes.statusText) || 'Server error');
+    if (!startRes.ok) {
+      const errData = await startRes.json().catch(() => null);
+      throw new Error(errData?.error || startRes.statusText || 'Server error');
+    }
     const { jobId } = await startRes.json();
 
     const deadline = Date.now() + timeoutMs;
@@ -268,13 +280,13 @@
   }
 
   async function handleRun(btn, svc, title, timeout, confirm) {
-    if (pending[svc]) return;
+    if (pending.has(svc)) return;
     if (confirm) {
       const ok = await showConfirm(title);
       if (!ok) { showToast('Cancelled', 'info'); return; }
     }
 
-    pending[svc] = true;
+    pending.set(svc, true);
     setButtonPending(btn, true);
     try {
       const { message, jobId } = await runService(svc, timeout);
@@ -282,9 +294,15 @@
     } catch (err) {
       showToast(err.message || 'Request failed', 'error', { jobId: err.jobId });
     } finally {
-      delete pending[svc];
+      pending.delete(svc);
       setButtonPending(btn, false);
     }
+  }
+
+  function toggleSection(header, sectionBody, title, expand) {
+    header.setAttribute('aria-expanded', String(expand));
+    sectionBody.classList.toggle('section-body--collapsed', !expand);
+    localStorage.setItem(STORAGE.section(title), String(expand));
   }
 
   function getSectionCols(configured) {
@@ -321,11 +339,7 @@
       titleSpan.textContent = title;
       header.append(chevron, titleSpan);
       header.addEventListener('click', () => {
-        const isExpanded = header.getAttribute('aria-expanded') === 'true';
-        const nowExpanded = !isExpanded;
-        header.setAttribute('aria-expanded', String(nowExpanded));
-        sectionBody.classList.toggle('section-body--collapsed', !nowExpanded);
-        localStorage.setItem(STORAGE.section(title), String(nowExpanded));
+        toggleSection(header, sectionBody, title, header.getAttribute('aria-expanded') !== 'true');
       });
     }
 
@@ -436,8 +450,8 @@
     const fab = document.createElement('div');
     fab.className = 'fab-group';
 
-    const collapseBtn = Object.assign(document.createElement('button'), { className: 'fab-btn', type: 'button', title: 'Collapse all', innerHTML: SVG_COLLAPSE });
-    const expandBtn   = Object.assign(document.createElement('button'), { className: 'fab-btn', type: 'button', title: 'Expand all',   innerHTML: SVG_EXPAND });
+    const collapseBtn = makeEl('button', { className: 'fab-btn', type: 'button', title: 'Collapse all', innerHTML: SVG_COLLAPSE });
+    const expandBtn   = makeEl('button', { className: 'fab-btn', type: 'button', title: 'Expand all',   innerHTML: SVG_EXPAND });
     fab.append(expandBtn, collapseBtn);
     document.body.appendChild(fab);
 
@@ -449,7 +463,8 @@
     let fabW = 44, fabH = 88;
 
     function applyPos() {
-      const cr = containerEl?.getBoundingClientRect() ?? { left: 0, right: window.innerWidth };
+      const vw = document.documentElement.clientWidth;
+      const cr = containerEl?.getBoundingClientRect() ?? { left: 0, right: vw };
       topPct = Math.max((fabH / 2 / window.innerHeight) * 100, Math.min(((window.innerHeight - fabH / 2) / window.innerHeight) * 100, topPct));
       fab.style.top = topPct + '%';
       fab.style.transform = 'translateY(-50%)';
@@ -457,7 +472,7 @@
       const gap = 8;
       const leftPos = side === 'left'
         ? (cr.left >= fabW + gap ? cr.left - fabW - gap : 0)
-        : (window.innerWidth - cr.right >= fabW + gap ? cr.right + gap : window.innerWidth - fabW);
+        : (vw - cr.right >= fabW + gap ? cr.right + gap : vw - fabW);
       fab.style.left = leftPos + 'px';
     }
     requestAnimationFrame(() => {
@@ -467,12 +482,16 @@
     });
     window.addEventListener('resize', applyPos, { passive: true });
 
+    function animateFabToPos() {
+      fab.classList.add('fab-group--animating');
+      applyPos();
+      fab.addEventListener('transitionend', () => fab.classList.remove('fab-group--animating'), { once: true });
+    }
+
     function setAllSections(expand) {
       renderedSections.forEach(({ header, sectionBody, collapsable, title }) => {
         if (!expand && !collapsable) return;
-        header.setAttribute('aria-expanded', String(expand));
-        sectionBody.classList.toggle('section-body--collapsed', !expand);
-        localStorage.setItem(STORAGE.section(title), String(expand));
+        toggleSection(header, sectionBody, title, expand);
       });
     }
 
@@ -499,15 +518,14 @@
       const newTopPx = Math.max(fabH / 2, Math.min(window.innerHeight - fabH / 2, startTopPx + dy));
       topPct = (newTopPx / window.innerHeight) * 100;
       fab.style.top = topPct + '%';
-      const newSide = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+      const vw = document.documentElement.clientWidth;
+      const newSide = e.clientX < vw / 2 ? 'left' : 'right';
       if (Math.abs(dx) > 30) {
         // horizontal intent — follow cursor and animate to side
-        fab.style.left = Math.max(0, Math.min(window.innerWidth - fabW, e.clientX - fabW / 2)) + 'px';
+        fab.style.left = Math.max(0, Math.min(vw - fabW, e.clientX - fabW / 2)) + 'px';
         if (newSide !== side) {
           side = newSide;
-          fab.classList.add('fab-group--animating');
-          applyPos();
-          fab.addEventListener('transitionend', () => fab.classList.remove('fab-group--animating'), { once: true });
+          animateFabToPos();
         }
       } else {
         side = newSide;
@@ -522,9 +540,7 @@
         else if (expandBtn.contains(downTarget)) { setAllSections(true); expandBtn.blur(); }
       } else {
         localStorage.setItem(STORAGE.fab, JSON.stringify({ side, topPct }));
-        fab.classList.add('fab-group--animating');
-        applyPos();
-        fab.addEventListener('transitionend', () => fab.classList.remove('fab-group--animating'), { once: true });
+        animateFabToPos();
       }
       downTarget = null;
       didDrag = false;
@@ -542,8 +558,14 @@
   }
 
   async function openLogsModal(jobId) {
-    const res = await fetch(`/jobs/${jobId}`);
-    const job = res.ok ? await res.json() : {};
+    let job = {};
+    try {
+      const res = await fetch(`/jobs/${jobId}`);
+      if (res.ok) job = await res.json();
+    } catch {
+      showToast('Failed to load logs.', 'error');
+      return;
+    }
     logsStdoutEl.textContent = job.stdout || '(empty)';
     logsStderrEl.textContent = job.stderr || '(empty)';
     activateLogsTab('stdout');
@@ -558,8 +580,7 @@
     if (subtitle) { siteSub.textContent = subtitle; } else { siteSub.style.display = 'none'; }
     allUsernames = users || [];
     currentUser = me;
-    renderAuthArea();
-    loadServices();
+    refreshAuth();
   }
 
   // --- Init ---
