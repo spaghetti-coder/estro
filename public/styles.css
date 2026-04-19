@@ -177,12 +177,7 @@ body.light .theme-toggle input:checked + .track + .knob{
   animation:rippleAnim 600ms linear;
   pointer-events:none;
 }
-@keyframes rippleAnim{
-  to{
-    transform:scale(4);
-    opacity:0;
-  }
-}
+@keyframes rippleAnim{ to{ transform:scale(4); opacity:0 } }
 
 /* disabled */
 .btn[disabled]{ opacity:0.6; cursor:not-allowed; transform:none }
@@ -261,11 +256,12 @@ body.light .theme-toggle input:checked + .track + .knob{
   font-size:12px;
   font-weight:700;
   flex-shrink:0;
+  background:var(--accent);
+  color:#fff;
   animation:toastIconPop .2s ease-out;
 }
-.toast.success .toast-icon{ background:var(--success); color:#fff; }
-.toast.error .toast-icon{ background:var(--error); color:#fff; }
-.toast:not(.success):not(.error) .toast-icon{ background:var(--accent); color:#fff; }
+.toast.success .toast-icon{ background:var(--success) }
+.toast.error .toast-icon{ background:var(--error) }
 .toast-message{ flex:1; padding-right:4px; }
 .toast.success{ border-left:4px solid var(--success) }
 .toast.error{ border-left:4px solid var(--error) }
@@ -288,11 +284,7 @@ body.light .theme-toggle input:checked + .track + .knob{
 .logs-tab:hover:not(.active){ background:rgba(255,255,255,0.06); color:var(--fg); }
 .logs-content{ font-family:ui-monospace,monospace; font-size:13px; white-space:pre-wrap; overflow-y:auto; max-height:360px; padding:10px 14px; background:var(--bg); border-radius:8px; color:var(--fg); border:1px solid rgba(255,255,255,0.06); }
 @keyframes toastIn{ to{ opacity:1; transform:none } }
-@keyframes toastIconPop{
-  0%{ transform:scale(0); }
-  60%{ transform:scale(1.2); }
-  100%{ transform:scale(1); }
-}
+@keyframes toastIconPop{ 0%{ transform:scale(0) } 60%{ transform:scale(1.2) } 100%{ transform:scale(1) } }
 
 /* footer */
 .footer{ margin-top:14px; font-size:13px; color:var(--muted); text-align:center; line-height:1.5 }
@@ -413,7 +405,6 @@ body.light .section-header{ border-bottom-color:rgba(0,0,0,0.08); }
   transform:translateY(-50%);
   display:flex;
   flex-direction:column;
-  gap:0;
   z-index:55;
   cursor:grab;
   user-select:none;

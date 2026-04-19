@@ -62,15 +62,21 @@ function buildCmd(command, remote) {
   const hosts = Array.isArray(remote) ? remote : [remote];
   if (hosts.length === 0) return cmd;
   hosts.forEach(validateHost);
+  // reduceRight wraps cmd in nested ssh calls: last host is outermost shell,
+  // so execution hops through the chain left-to-right as listed in config.
   return hosts.reduceRight((innerCmd, host) => {
     return `ssh ${SSH_OPTS} ${host} '${shellEscape(innerCmd)}'`;
   }, cmd);
 }
 
+function secKey(field) {
+  return '_sec' + field.charAt(0).toUpperCase() + field.slice(1);
+}
+
 function cascadeField(svc, field, builtinDefault) {
   if (svc[field] !== undefined) return svc[field];
-  const secKey = '_sec' + field.charAt(0).toUpperCase() + field.slice(1);
-  if (svc[secKey] !== undefined) return svc[secKey];
+  const sk = secKey(field);
+  if (svc[sk] !== undefined) return svc[sk];
   if (globalCfg[field] !== undefined) return globalCfg[field];
   return builtinDefault;
 }
@@ -135,16 +141,16 @@ function listServices(req, res) {
 
 async function runService(req, res) {
   const entry = services[parseInt(req.params.svc, 10)];
-  if (!entry) return res.status(404).send('Unknown service');
+  if (!entry) return res.status(404).json({ error: 'Unknown service' });
 
-  if (!isServiceAccessible(entry, req.session?.user)) return res.status(403).send('Forbidden');
+  if (!isServiceAccessible(entry, req.session?.user)) return res.status(403).json({ error: 'Forbidden' });
 
   const remote = cascadeField(entry, 'remote', null);
   let cmd;
   try {
     cmd = buildCmd(entry.command, remote);
   } catch (e) {
-    return res.status(400).send(e.message);
+    return res.status(400).json({ error: e.message });
   }
 
   const jobId = crypto.randomUUID();
@@ -169,7 +175,7 @@ async function runService(req, res) {
 
 function getJob(req, res) {
   const job = jobs.get(req.params.id);
-  if (!job) return res.status(404).send('Unknown job');
+  if (!job) return res.status(404).json({ error: 'Unknown job' });
   res.json(job);
 }
 
@@ -192,6 +198,14 @@ async function login(req, res) {
 
 function logout(req, res) {
   req.session.destroy(() => { res.clearCookie('connect.sid'); res.status(204).end(); });
+}
+
+function getConfig(_req, res) {
+  res.json({
+    title: globalCfg.title || 'Estro',
+    subtitle: globalCfg.subtitle ?? '',
+    users: Object.keys(users),
+  });
 }
 
 // --- Init ---
@@ -217,7 +231,7 @@ function init() {
 
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 
-  app.get('/config',    (_, res) => res.json({ title: globalCfg.title || 'Estro', subtitle: globalCfg.subtitle ?? '', users: Object.keys(users) }));
+  app.get('/config',    getConfig);
   app.get('/services',  listServices);
   app.get('/me',        getMe);
   app.post('/login',    loginLimiter, login);
