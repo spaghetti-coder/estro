@@ -95,3 +95,25 @@ volumes:
 ```
 
 Host key checking is disabled (`StrictHostKeyChecking=no`) — suitable for home network use.
+
+## Security
+
+**Estro is designed for trusted home networks only. Do not expose it to the internet.**
+
+- Sessions use `httpOnly`, `sameSite=strict` cookies
+- Passwords are stored as bcrypt hashes (cost 10)
+- Login attempts are rate-limited to 10 per 15 minutes per IP
+- `StrictHostKeyChecking=no` means SSH connections are vulnerable to MITM on untrusted networks — only use on LANs you control
+
+### Access control: `allowed: []` vs `allowed: null`
+
+Both `allowed: null` (or omitting the field) and `allowed: []` (an empty list) result in a **public** service. An empty list does **not** mean "nobody" — it means no restriction. To actually restrict access, provide at least one username or group name.
+
+### Persistent session secret
+
+If no `secret` is set in `config.yaml`, a random secret is generated on every restart, invalidating all existing sessions. Set a stable secret for persistent logins:
+
+```yaml
+global:
+  secret: your-random-secret-here
+```

@@ -1,7 +1,11 @@
 (() => {
-  const THEME_KEY = 'ui:theme';
-  const SECTION_KEY_PREFIX = 'section:';
-  const FAB_KEY = 'fab:pos';
+  const STORAGE = {
+    theme:   'ui:theme',
+    section: (title) => 'section:' + title,
+    fab:     'fab:pos',
+  };
+  const FOCUS_DELAY_MS = 10;
+  const RIPPLE_DURATION_MS = 600;
   const TOAST_ICONS = { success: '✓', error: '✕', info: 'ℹ' };
   const pending = {};
 
@@ -26,7 +30,7 @@
     body.classList.toggle('dark', isDark);
     if (checkbox) checkbox.checked = isDark;
     if (knob) knob.textContent = isDark ? '🌙' : '☀️';
-    if (save) localStorage.setItem(THEME_KEY, name);
+    if (save) localStorage.setItem(STORAGE.theme, name);
   }
 
   // --- Toasts ---
@@ -40,27 +44,46 @@
     setTimeout(() => t.remove(), timeout);
   }
 
+  // --- Modal helpers ---
+
+  function blurIfInside(el) {
+    if (el.contains(document.activeElement)) document.activeElement.blur();
+  }
+
+  function openModalEl(el, focusEl) {
+    lastActive = document.activeElement;
+    el.setAttribute('aria-hidden', 'false');
+    body.classList.add('modal-open');
+    setTimeout(() => focusEl?.focus?.({ preventScroll: true }), FOCUS_DELAY_MS);
+  }
+
+  function closeModalEl(el) {
+    blurIfInside(el);
+    el.setAttribute('aria-hidden', 'true');
+    body.classList.remove('modal-open');
+    try { lastActive?.focus(); } catch (e) {}
+    lastActive = null;
+  }
+
+  function setupModalEvents(el, closeCallback) {
+    el?.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCallback(); });
+    el?.addEventListener('click', (e) => { if (e.target === el) closeCallback(); });
+  }
+
   // --- Confirm modal ---
 
   function showConfirm(title) {
     return new Promise((resolve) => {
       modalTitle.textContent = title;
-      lastActive = document.activeElement;
-      modal.setAttribute('aria-hidden', 'false');
-      body.classList.add('modal-open');
-      setTimeout(() => modalPanel?.focus?.({ preventScroll: true }), 10);
+      openModalEl(modal, modalPanel);
       modalResolve = resolve;
     });
   }
 
   function closeModal(result) {
-    if (modal.contains(document.activeElement)) document.activeElement.blur();
-    modal.setAttribute('aria-hidden', 'true');
-    body.classList.remove('modal-open');
+    closeModalEl(modal);
     if (modalResolve) modalResolve(result);
     modalResolve = null;
-    try { lastActive?.focus(); } catch (e) {}
-    lastActive = null;
   }
 
   // --- Auth area ---
@@ -100,16 +123,26 @@
     userFilterEl.value = '';
     rememberMeEl.checked = true;
     populateUserSelect('');
-    loginModal.setAttribute('aria-hidden', 'false');
-    body.classList.add('modal-open');
-    setTimeout(() => (userSelectEl.options.length === 1 ? loginPasswordEl : userFilterEl).focus(), 10);
+    const focusEl = userSelectEl.options.length === 1 ? loginPasswordEl : userFilterEl;
+    openModalEl(loginModal, focusEl);
   }
 
   function closeLoginModal() {
-    if (loginModal.contains(document.activeElement)) document.activeElement.blur();
-    loginModal.setAttribute('aria-hidden', 'true');
-    body.classList.remove('modal-open');
+    closeModalEl(loginModal);
     loginForUsers = null;
+  }
+
+  function onLoginSuccess(data) {
+    currentUser = { username: data.username, groups: [] };
+    closeLoginModal();
+    renderAuthArea();
+    loadServices();
+  }
+
+  function onLoginError(err) {
+    loginErrorEl.textContent = err || 'Login failed.';
+    loginPasswordEl.value = '';
+    loginPasswordEl.focus();
   }
 
   async function handleLogin() {
@@ -126,23 +159,22 @@
         body: JSON.stringify({ username, password, rememberMe: rememberMeEl.checked }),
       });
       if (res.ok) {
-        const data = await res.json();
-        currentUser = { username: data.username, groups: [] };
-        closeLoginModal();
-        renderAuthArea();
-        loadServices();
+        onLoginSuccess(await res.json());
       } else {
         const data = await res.json().catch(() => ({}));
-        loginErrorEl.textContent = data.error || 'Login failed.';
-        loginPasswordEl.value = '';
-        loginPasswordEl.focus();
+        onLoginError(data.error);
       }
     } catch { loginErrorEl.textContent = 'Network error. Try again.'; }
     finally { loginSubmitEl.disabled = false; }
   }
 
   async function handleLogout() {
-    await fetch('/logout', { method: 'POST' });
+    try {
+      await fetch('/logout', { method: 'POST' });
+    } catch {
+      showToast('Logout failed. Try again.', 'error');
+      return;
+    }
     currentUser = null;
     renderAuthArea();
     loadServices();
@@ -187,7 +219,7 @@
     const size = Math.max(rect.width, rect.height);
     ripple.style.cssText = `width:${size}px;height:${size}px;left:${event.clientX - rect.left - size / 2}px;top:${event.clientY - rect.top - size / 2}px`;
     button.appendChild(ripple);
-    setTimeout(() => ripple.remove(), 600);
+    setTimeout(() => ripple.remove(), RIPPLE_DURATION_MS);
   }
 
   async function handleRun(btn, svc, title, timeout, confirm) {
@@ -218,7 +250,7 @@
   }
 
   function renderSection(title, buttons, collapsable, columns) {
-    const storedExpanded = localStorage.getItem(SECTION_KEY_PREFIX + title);
+    const storedExpanded = localStorage.getItem(STORAGE.section(title));
     const expanded = !collapsable || storedExpanded === 'true';
     const wrapper = document.createElement('div');
     wrapper.className = 'section-group';
@@ -230,16 +262,25 @@
 
     if (!collapsable) {
       header.classList.add('section-header--pinned');
-      header.innerHTML = '<span class="section-title">' + title + '</span>';
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'section-title';
+      titleSpan.textContent = title;
+      header.appendChild(titleSpan);
     } else {
-      header.innerHTML = '<span class="section-chevron" aria-hidden="true">▶</span>'
-        + '<span class="section-title">' + title + '</span>';
+      const chevron = document.createElement('span');
+      chevron.className = 'section-chevron';
+      chevron.setAttribute('aria-hidden', 'true');
+      chevron.textContent = '▶';
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'section-title';
+      titleSpan.textContent = title;
+      header.append(chevron, titleSpan);
       header.addEventListener('click', () => {
         const isExpanded = header.getAttribute('aria-expanded') === 'true';
         const nowExpanded = !isExpanded;
         header.setAttribute('aria-expanded', String(nowExpanded));
         sectionBody.classList.toggle('section-body--collapsed', !nowExpanded);
-        localStorage.setItem(SECTION_KEY_PREFIX + title, String(nowExpanded));
+        localStorage.setItem(STORAGE.section(title), String(nowExpanded));
       });
     }
 
@@ -253,15 +294,7 @@
     return { wrapper, header, sectionBody, collapsable, title, columns };
   }
 
-  function buildServiceButton({ id, title, timeout, confirm, public: isPub, accessible, allowedUsers }) {
-    const btn = buttonTpl.cloneNode(true).firstElementChild;
-    btn.dataset.svc = id;
-    btn.id = `btn-${id}`;
-    if (confirm) {
-      btn.textContent = title;
-    } else {
-      btn.innerHTML = '<span class="btn-icon">⚡</span><span class="btn-label">' + title + '</span>';
-    }
+  function applyButtonAccessState(btn, { public: isPub, accessible, allowedUsers, title, confirm }) {
     if (!isPub && !accessible) {
       if (currentUser) {
         btn.classList.add('forbidden');
@@ -271,9 +304,33 @@
         btn.textContent = '🔒 ' + title + (confirm ? '' : ' ⚡');
         btn.addEventListener('click', (e) => { createRipple(e, btn); openLoginModal(allowedUsers); });
       }
-    } else {
-      btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, title, timeout, confirm); });
     }
+  }
+
+  function buildServiceButton(svc) {
+    const { id, title, timeout, confirm, public: isPub, accessible } = svc;
+    const btn = buttonTpl.cloneNode(true).firstElementChild;
+    btn.dataset.svc = id;
+    btn.id = `btn-${id}`;
+
+    if (confirm) {
+      btn.textContent = title;
+    } else {
+      const icon = document.createElement('span');
+      icon.className = 'btn-icon';
+      icon.textContent = '⚡';
+      const label = document.createElement('span');
+      label.className = 'btn-label';
+      label.textContent = title;
+      btn.append(icon, label);
+    }
+
+    if (isPub || accessible) {
+      btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, title, timeout, confirm); });
+    } else {
+      applyButtonAccessState(btn, svc);
+    }
+
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
     });
@@ -283,6 +340,23 @@
   // track rendered sections for collapse/expand all
   let renderedSections = [];
 
+  function groupServicesBySection(services) {
+    const sectionOrder = [];
+    const sectionMap = {};
+    const sectionMeta = {};
+    services.forEach((svc) => {
+      const btn = buildServiceButton(svc);
+      const key = svc.section || '';
+      if (!sectionMap[key]) {
+        sectionMap[key] = [];
+        sectionOrder.push(key);
+        sectionMeta[key] = { collapsable: svc.sectionCollapsable, columns: svc.sectionColumns };
+      }
+      sectionMap[key].push(btn);
+    });
+    return { sectionOrder, sectionMap, sectionMeta };
+  }
+
   async function loadServices() {
     try {
       const res = await fetch('/services');
@@ -290,19 +364,7 @@
       const services = await res.json();
       buttonsEl.innerHTML = '';
       renderedSections = [];
-      const sectionOrder = [];
-      const sectionMap = {};
-      const sectionMeta = {};
-      services.forEach((svc) => {
-        const btn = buildServiceButton(svc);
-        const key = svc.section || '';
-        if (!sectionMap[key]) {
-          sectionMap[key] = [];
-          sectionOrder.push(key);
-          sectionMeta[key] = { collapsable: svc.sectionCollapsable, columns: svc.sectionColumns };
-        }
-        sectionMap[key].push(btn);
-      });
+      const { sectionOrder, sectionMap, sectionMeta } = groupServicesBySection(services);
       for (const key of sectionOrder) {
         if (key) {
           const meta = sectionMeta[key];
@@ -313,7 +375,10 @@
           buttonsEl.append(...sectionMap[key]);
         }
       }
-    } catch { buttonsEl.textContent = 'Failed to load services.'; }
+    } catch (err) {
+      console.error('Failed to load services:', err);
+      buttonsEl.textContent = 'Failed to load services.';
+    }
   }
 
   // --- Collapse / Expand all FABs ---
@@ -331,7 +396,7 @@
     fab.append(expandBtn, collapseBtn);
     document.body.appendChild(fab);
 
-    const saved = JSON.parse(localStorage.getItem(FAB_KEY) || 'null');
+    const saved = JSON.parse(localStorage.getItem(STORAGE.fab) || 'null');
     let side = saved?.side || 'right';
     let topPct = saved?.topPct ?? 50;
 
@@ -356,11 +421,11 @@
         if (!expand && !collapsable) return;
         header.setAttribute('aria-expanded', String(expand));
         sectionBody.classList.toggle('section-body--collapsed', !expand);
-        localStorage.setItem(SECTION_KEY_PREFIX + title, String(expand));
+        localStorage.setItem(STORAGE.section(title), String(expand));
       });
     }
 
-    // whole block is drag handle; short tap fires action on whichever button was pressed
+    // Capture pointer to allow dragging outside button bounds; short tap fires action on target button
     let downTarget = null, startX = 0, startY = 0, startTopPx = 0, didDrag = false;
 
     fab.addEventListener('pointerdown', (e) => {
@@ -391,7 +456,7 @@
         if (collapseBtn.contains(downTarget)) setAllSections(false);
         else if (expandBtn.contains(downTarget)) setAllSections(true);
       } else {
-        localStorage.setItem(FAB_KEY, JSON.stringify({ side, topPct }));
+        localStorage.setItem(STORAGE.fab, JSON.stringify({ side, topPct }));
       }
       downTarget = null;
       didDrag = false;
@@ -404,6 +469,7 @@
     const siteTitle = document.getElementById('site-title');
     const siteSub   = document.getElementById('site-subtitle');
     siteTitle.textContent = title;
+    document.title = title;
     if (subtitle) { siteSub.textContent = subtitle; } else { siteSub.style.display = 'none'; }
     allUsernames = users || [];
     currentUser = me;
@@ -457,19 +523,17 @@
         : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
     });
 
-    const saved = localStorage.getItem(THEME_KEY);
+    const saved = localStorage.getItem(STORAGE.theme);
     const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
     setTheme(saved || (prefersDark ? 'dark' : 'light'), false);
     checkbox?.addEventListener('change', () => setTheme(checkbox.checked ? 'dark' : 'light'));
 
     document.getElementById('modalCancel')?.addEventListener('click', () => closeModal(false));
     document.getElementById('modalConfirm')?.addEventListener('click', () => closeModal(true));
-    modal?.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(false); });
-    modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(false); });
+    setupModalEvents(modal, () => closeModal(false));
 
     document.getElementById('loginModalClose')?.addEventListener('click', closeLoginModal);
-    loginModal?.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLoginModal(); });
-    loginModal?.addEventListener('click', (e) => { if (e.target === loginModal) closeLoginModal(); });
+    setupModalEvents(loginModal, closeLoginModal);
     userFilterEl?.addEventListener('input', () => populateUserSelect(userFilterEl.value));
     loginSubmitEl?.addEventListener('click', handleLogin);
     loginPasswordEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
@@ -485,7 +549,8 @@
     Promise.all([
       fetch('/config').then(r => r.json()),
       fetch('/me').then(r => r.json()).catch(() => null),
-    ]).then(([config, me]) => onBootstrap(config, me));
+    ]).then(([config, me]) => onBootstrap(config, me))
+      .catch(() => { buttonsEl.textContent = 'Failed to connect to server.'; });
   }
 
   window.__ui = { showToast, showConfirm, runService };

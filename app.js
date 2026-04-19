@@ -7,12 +7,22 @@ const { promisify } = require('util');
 const crypto  = require('crypto');
 const session = require('express-session');
 const bcrypt  = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 
 const execP = promisify(exec);
 const CLIENT_TIMEOUT_BUFFER = 10000; // client AbortController fires after server timeout + this buffer
+const REMEMBER_ME_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 const SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
 const configFile = ['config.yaml', 'config.yml'].find(f => fs.existsSync(path.join(__dirname, f))) || 'config.yaml';
-const cfg = yaml.load(fs.readFileSync(path.join(__dirname, configFile), 'utf8'));
+
+let cfg;
+try {
+  cfg = yaml.load(fs.readFileSync(path.join(__dirname, configFile), 'utf8'));
+} catch (e) {
+  console.error(`Failed to load ${configFile}:`, e.message);
+  process.exit(1);
+}
+
 const globalCfg = cfg.global || {};
 const { hostname = '127.0.0.1', port = 3000, secret: cfgSecret } = globalCfg;
 const sessionSecret = cfgSecret || crypto.randomBytes(32).toString('hex');
@@ -39,11 +49,16 @@ function shellEscape(cmd) {
   return cmd.replace(/'/g, "'\\''");
 }
 
+function validateHost(host) {
+  if (!/^[a-zA-Z0-9._@:/-]+$/.test(host)) throw new Error(`Invalid remote host: ${host}`);
+}
+
 function buildCmd(command, remote) {
   const cmd = Array.isArray(command) ? command.join(' && ') : command;
   if (!remote) return cmd;
   const hosts = Array.isArray(remote) ? remote : [remote];
   if (hosts.length === 0) return cmd;
+  hosts.forEach(validateHost);
   return hosts.reduceRight((innerCmd, host) => {
     return `ssh ${SSH_OPTS} ${host} '${shellEscape(innerCmd)}'`;
   }, cmd);
@@ -63,6 +78,7 @@ function getSvcTimeout(svc) {
 
 function resolveUsers(svc) {
   const allowed = cascadeField(svc, 'allowed', null);
+  // null/[] both mean "no restriction" (public). Non-empty array = explicit allowlist.
   if (allowed === null || allowed.length === 0) return null;
   const result = new Set();
   for (const name of allowed) {
@@ -77,55 +93,66 @@ function resolveUsers(svc) {
   return [...result];
 }
 
+function isServiceAccessible(svc, username) {
+  const allowed = resolveUsers(svc);
+  return allowed === null || (!!username && allowed.includes(username));
+}
+
+function logStream(label, content, fn = console.log) {
+  if (content) {
+    fn(`~~~~~ ${label} START ~~~~~`);
+    fn(content.trim());
+    fn(`~~~~~ ${label} END ~~~~~`);
+  }
+}
+
+function serializeService(svc, i, username) {
+  const allowedUsers = resolveUsers(svc);
+  const isPublic = allowedUsers === null;
+  return {
+    id: i,
+    title: svc.title,
+    timeout: getSvcTimeout(svc) + CLIENT_TIMEOUT_BUFFER,
+    confirm: cascadeField(svc, 'confirm', true),
+    section: svc._section || null,
+    sectionCollapsable: cascadeField(svc, 'collapsable', true),
+    sectionColumns: cascadeField(svc, 'columns', 3),
+    public: isPublic,
+    accessible: isPublic || (!!username && allowedUsers.includes(username)),
+    allowedUsers,
+  };
+}
+
 // --- Route handlers ---
 
 function listServices(req, res) {
   const username = req.session?.user || null;
-  const list = services.map((svc, i) => {
-    const allowedUsers = resolveUsers(svc);
-    const isPublic = allowedUsers === null;
-    return {
-      id: i,
-      title: svc.title,
-      timeout: getSvcTimeout(svc) + CLIENT_TIMEOUT_BUFFER,
-      confirm: cascadeField(svc, 'confirm', true),
-      section: svc._section || null,
-      sectionCollapsable: cascadeField(svc, 'collapsable', true),
-      sectionColumns: cascadeField(svc, 'columns', 3),
-      public: isPublic,
-      accessible: isPublic || (!!username && allowedUsers.includes(username)),
-      allowedUsers,
-    };
-  });
-  res.json(list);
+  res.json(services.map((svc, i) => serializeService(svc, i, username)));
 }
 
 async function runService(req, res) {
   const entry = services[parseInt(req.params.svc, 10)];
   if (!entry) return res.status(404).send('Unknown service');
 
-  const allowed = resolveUsers(entry);
-  if (allowed !== null && !allowed.includes(req.session?.user)) return res.status(403).send('Forbidden');
+  if (!isServiceAccessible(entry, req.session?.user)) return res.status(403).send('Forbidden');
 
   const remote = cascadeField(entry, 'remote', null);
-  const cmd = buildCmd(entry.command, remote);
+  let cmd;
+  try {
+    cmd = buildCmd(entry.command, remote);
+  } catch (e) {
+    return res.status(400).send(e.message);
+  }
+
   try {
     console.log(`Running ${entry.title}: ${cmd}`);
     const { stdout, stderr } = await execP(cmd, { timeout: getSvcTimeout(entry) });
-    if (stdout) {
-      console.log('~~~~~ STDOUT START ~~~~~');
-      console.log(stdout.trim());
-      console.log('~~~~~ STDOUT END ~~~~~');
-    }
-    if (stderr) {
-      console.warn('~~~~~ STDERR START ~~~~~');
-      console.warn(stderr.trim());
-      console.warn('~~~~~ STDERR END ~~~~~');
-    }
+    logStream('STDOUT', stdout);
+    logStream('STDERR', stderr, console.warn);
     return res.send(`${entry.title} done`);
   } catch (error) {
-    console.error(`Error running ${entry.title}:`, error);
-    return res.status(500).send(`Error: ${error.stderr || error.message}`);
+    console.error(`Command error for ${entry.title}:`, error.stderr || error.message);
+    return res.status(500).send('Command failed');
   }
 }
 
@@ -142,7 +169,7 @@ async function login(req, res) {
   if (!u || !(await bcrypt.compare(password, u.password)))
     return res.status(401).json({ error: 'Invalid username or password' });
   req.session.user = username;
-  if (rememberMe) req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+  if (rememberMe) req.session.cookie.maxAge = REMEMBER_ME_MAX_AGE;
   res.json({ username });
 }
 
@@ -154,23 +181,29 @@ function logout(req, res) {
 
 function init() {
   const app = express();
+  app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    next();
+  });
   app.use(express.static(path.join(__dirname, 'public')));
   app.use(express.json());
   app.use(session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: 'lax' },
+    cookie: { httpOnly: true, sameSite: 'strict' },
   }));
   app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
     next();
   });
 
+  const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+
   app.get('/config',    (_, res) => res.json({ title: globalCfg.title || 'Estro', subtitle: globalCfg.subtitle ?? '', users: Object.keys(users) }));
   app.get('/services',  listServices);
   app.get('/me',        getMe);
-  app.post('/login',    login);
+  app.post('/login',    loginLimiter, login);
   app.post('/logout',   logout);
   app.post('/run/:svc', runService);
 
