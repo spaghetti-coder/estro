@@ -445,20 +445,26 @@
     let side = saved?.side || 'right';
     let topPct = saved?.topPct ?? 50;
 
+    const containerEl = document.querySelector('.container');
+    let fabW = 44, fabH = 88;
+
     function applyPos() {
-      const cr = document.querySelector('.container')?.getBoundingClientRect() ?? { left: 0, right: window.innerWidth };
-      const fabW = fab.offsetWidth || 44;
+      const cr = containerEl?.getBoundingClientRect() ?? { left: 0, right: window.innerWidth };
+      topPct = Math.max((fabH / 2 / window.innerHeight) * 100, Math.min(((window.innerHeight - fabH / 2) / window.innerHeight) * 100, topPct));
       fab.style.top = topPct + '%';
       fab.style.transform = 'translateY(-50%)';
-      fab.style.removeProperty('left');
       fab.style.removeProperty('right');
-      if (side === 'left') {
-        fab.style.left = Math.max(0, cr.left - fabW - 8) + 'px';
-      } else {
-        fab.style.right = Math.max(0, window.innerWidth - cr.right - fabW - 8) + 'px';
-      }
+      const gap = 8;
+      const leftPos = side === 'left'
+        ? (cr.left >= fabW + gap ? cr.left - fabW - gap : 0)
+        : (window.innerWidth - cr.right >= fabW + gap ? cr.right + gap : window.innerWidth - fabW);
+      fab.style.left = leftPos + 'px';
     }
-    requestAnimationFrame(applyPos);
+    requestAnimationFrame(() => {
+      fabW = fab.offsetWidth || 44;
+      fabH = fab.offsetHeight || 88;
+      applyPos();
+    });
     window.addEventListener('resize', applyPos, { passive: true });
 
     function setAllSections(expand) {
@@ -479,6 +485,7 @@
       startY = e.clientY;
       startTopPx = (topPct / 100) * window.innerHeight;
       didDrag = false;
+      fab.classList.remove('fab-group--animating');
       fab.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
@@ -488,20 +495,36 @@
       const dx = e.clientX - startX, dy = e.clientY - startY;
       if (!didDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       didDrag = true;
-      const newTopPx = Math.max(0, Math.min(window.innerHeight, startTopPx + dy));
+
+      const newTopPx = Math.max(fabH / 2, Math.min(window.innerHeight - fabH / 2, startTopPx + dy));
       topPct = (newTopPx / window.innerHeight) * 100;
-      side = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
-      applyPos();
+      fab.style.top = topPct + '%';
+      const newSide = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+      if (Math.abs(dx) > 30) {
+        // horizontal intent — follow cursor and animate to side
+        fab.style.left = Math.max(0, Math.min(window.innerWidth - fabW, e.clientX - fabW / 2)) + 'px';
+        if (newSide !== side) {
+          side = newSide;
+          fab.classList.add('fab-group--animating');
+          applyPos();
+          fab.addEventListener('transitionend', () => fab.classList.remove('fab-group--animating'), { once: true });
+        }
+      } else {
+        side = newSide;
+      }
     });
 
     function stopDrag(e) {
       if (!fab.hasPointerCapture(e.pointerId)) return;
       fab.releasePointerCapture(e.pointerId);
       if (!didDrag) {
-        if (collapseBtn.contains(downTarget)) setAllSections(false);
-        else if (expandBtn.contains(downTarget)) setAllSections(true);
+        if (collapseBtn.contains(downTarget)) { setAllSections(false); collapseBtn.blur(); }
+        else if (expandBtn.contains(downTarget)) { setAllSections(true); expandBtn.blur(); }
       } else {
         localStorage.setItem(STORAGE.fab, JSON.stringify({ side, topPct }));
+        fab.classList.add('fab-group--animating');
+        applyPos();
+        fab.addEventListener('transitionend', () => fab.classList.remove('fab-group--animating'), { once: true });
       }
       downTarget = null;
       didDrag = false;
