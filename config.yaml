@@ -78,14 +78,14 @@ sections:
     services:
       - title: Remote uptime
         command: uptime
-        remote: admin@my-server.local   # Targets user@host or just host
+        remote: server1.local     # Targets user@host or just host
         allowed: [guest]          # Only allowed for guest
       - title: Remote disk
         command: df -h /
-        remote: admin@my-server.local
+        remote: admin@server2.local
         confirm: false
       - title: Remote journal
         command: journalctl -n 100 --no-pager
-        remote: admin@my-server.local
+        remote: server1.local
         timeout: 20
         allowed: [admins]         # Only allowed for admins
