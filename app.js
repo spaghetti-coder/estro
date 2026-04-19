@@ -12,6 +12,9 @@ const rateLimit = require('express-rate-limit');
 const execP = promisify(exec);
 const CLIENT_TIMEOUT_BUFFER = 10000; // client AbortController fires after server timeout + this buffer
 const REMEMBER_ME_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+const JOB_TTL_MS = 10 * 60 * 1000;
+
+const jobs = new Map();
 const SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
 const configFile = ['config.yaml', 'config.yml'].find(f => fs.existsSync(path.join(__dirname, f))) || 'config.yaml';
 
@@ -144,16 +147,30 @@ async function runService(req, res) {
     return res.status(400).send(e.message);
   }
 
-  try {
-    console.log(`Running ${entry.title}: ${cmd}`);
-    const { stdout, stderr } = await execP(cmd, { timeout: getSvcTimeout(entry) });
-    logStream('STDOUT', stdout);
-    logStream('STDERR', stderr, console.warn);
-    return res.send(`${entry.title} done`);
-  } catch (error) {
-    console.error(`Command error for ${entry.title}:`, error.stderr || error.message);
-    return res.status(500).send('Command failed');
-  }
+  const jobId = crypto.randomUUID();
+  jobs.set(jobId, { status: 'running', title: entry.title });
+  res.status(202).json({ jobId });
+
+  (async () => {
+    try {
+      console.log(`Running ${entry.title}: ${cmd}`);
+      const { stdout, stderr } = await execP(cmd, { timeout: getSvcTimeout(entry) });
+      logStream('STDOUT', stdout);
+      logStream('STDERR', stderr, console.warn);
+      jobs.set(jobId, { status: 'done', title: entry.title });
+    } catch (error) {
+      console.error(`Command error for ${entry.title}:`, error.stderr || error.message);
+      jobs.set(jobId, { status: 'error', title: entry.title });
+    } finally {
+      setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
+    }
+  })();
+}
+
+function getJob(req, res) {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).send('Unknown job');
+  res.json(job);
 }
 
 function getMe(req, res) {
@@ -206,6 +223,7 @@ function init() {
   app.post('/login',    loginLimiter, login);
   app.post('/logout',   logout);
   app.post('/run/:svc', runService);
+  app.get('/jobs/:id',  getJob);
 
   app.listen(port, hostname, () => console.log(`Estro listening on http://${hostname}:${port}`));
 }
