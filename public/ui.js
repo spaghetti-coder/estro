@@ -32,8 +32,7 @@
 
   function setTheme(name, save = true) {
     const isDark = name === 'dark';
-    body.classList.toggle('light', !isDark);
-    body.classList.toggle('dark', isDark);
+    document.documentElement.classList.toggle('light', !isDark);
     if (checkbox) checkbox.checked = isDark;
     if (knob) knob.textContent = isDark ? '🌙' : '☀️';
     if (save) localStorage.setItem(STORAGE.theme, name);
@@ -101,14 +100,14 @@
   function openModalEl(el, focusEl) {
     lastActive = document.activeElement;
     el.setAttribute('aria-hidden', 'false');
-    body.classList.add('modal-open');
+    document.documentElement.classList.add('modal-open');
     setTimeout(() => focusEl?.focus?.({ preventScroll: true }), FOCUS_DELAY_MS);
   }
 
   function closeModalEl(el) {
     blurIfInside(el);
     el.setAttribute('aria-hidden', 'true');
-    body.classList.remove('modal-open');
+    document.documentElement.classList.remove('modal-open');
     lastActive?.focus({ preventScroll: true });
     lastActive = null;
   }
