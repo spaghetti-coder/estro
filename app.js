@@ -8,6 +8,9 @@ const crypto  = require('crypto');
 const session = require('express-session');
 const bcrypt  = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const { z } = require('zod');
 
 const execP = promisify(exec);
 const CLIENT_TIMEOUT_BUFFER = 10000; // client AbortController fires after server timeout + this buffer
@@ -18,9 +21,53 @@ const jobs = new Map();
 const SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
 const configFile = ['config.yaml', 'config.yml'].find(f => fs.existsSync(path.join(__dirname, f))) || 'config.yaml';
 
+const remoteField = z.union([z.string(), z.array(z.string())]).optional();
+const configSchema = z.object({
+  global: z.object({
+    title:      z.string().optional(),
+    subtitle:   z.string().optional(),
+    hostname:   z.string().optional(),
+    port:       z.coerce.number().int().positive().optional(),
+    secret:     z.string().optional(),
+    timeout:    z.number().positive().optional(),
+    confirm:    z.boolean().optional(),
+    allowed:    z.array(z.string()).nullable().optional(),
+    collapsable:z.boolean().optional(),
+    columns:    z.number().int().positive().optional(),
+    remote:     remoteField,
+  }).optional(),
+  users: z.record(z.string(), z.object({
+    password: z.string(),
+    groups:   z.array(z.string()).optional(),
+  })).optional(),
+  sections: z.array(z.object({
+    title:      z.string(),
+    services:   z.array(z.object({
+      title:    z.string(),
+      command:  z.union([z.string(), z.array(z.string())]),
+      allowed:  z.array(z.string()).nullable().optional(),
+      timeout:  z.number().positive().optional(),
+      confirm:  z.boolean().optional(),
+      remote:   remoteField,
+    })).optional(),
+    allowed:    z.array(z.string()).nullable().optional(),
+    timeout:    z.number().positive().optional(),
+    confirm:    z.boolean().optional(),
+    collapsable:z.boolean().optional(),
+    columns:    z.number().int().positive().optional(),
+    remote:     remoteField,
+  })).optional(),
+});
+
 let cfg;
 try {
-  cfg = yaml.load(fs.readFileSync(path.join(__dirname, configFile), 'utf8'));
+  const raw = yaml.load(fs.readFileSync(path.join(__dirname, configFile), 'utf8'));
+  const result = configSchema.safeParse(raw);
+  if (!result.success) {
+    console.error(`Invalid ${configFile}:\n` + z.prettifyError(result.error));
+    process.exit(1);
+  }
+  cfg = result.data;
 } catch (e) {
   console.error(`Failed to load ${configFile}:`, e.message);
   process.exit(1);
@@ -212,8 +259,10 @@ function getConfig(_req, res) {
 
 function init() {
   const app = express();
-  app.use((req, res, next) => {
-    res.setHeader('Content-Security-Policy', "default-src 'self'");
+  app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], upgradeInsecureRequests: null } } }));
+  app.get('/favicon.svg', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
   });
   app.use(express.static(path.join(__dirname, 'public')));
@@ -224,10 +273,7 @@ function init() {
     saveUninitialized: false,
     cookie: { httpOnly: true, sameSite: 'strict' },
   }));
-  app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
-    next();
-  });
+  app.use(morgan('dev'));
 
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 
