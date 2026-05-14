@@ -15,5 +15,6 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 3000
 WORKDIR /app
+ENV ESTRO_CONFIG=/app/config.yaml
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["estro", "-config", "config.yaml"]
+CMD ["estro"]

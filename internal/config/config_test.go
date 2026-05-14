@@ -443,3 +443,83 @@ func TestIsAccessible(t *testing.T) {
 		t.Error("empty allowed should be accessible (public)")
 	}
 }
+
+func remoteOverrideConfigYAML() string {
+	return `---
+global:
+  title: Estro
+  subtitle: Remote override test
+  hostname: 0.0.0.0
+  port: 3000
+  timeout: 30
+  remote: server1.local
+users:
+  admin:
+    password: '$2y$10$hash'
+sections:
+  - title: Section with global remote
+    services:
+      - title: Inherits global remote
+        command: uptime
+      - title: Local override at service
+        command: hostname
+        remote: []
+  - title: Section with local override
+    remote: []
+    services:
+      - title: Inherits section local
+        command: date
+      - title: Service remote override
+        command: uptime
+        remote: server2.local
+  - title: Section with section remote
+    remote: server2.local
+    services:
+      - title: Inherits section remote
+        command: uptime
+      - title: Local override in section remote
+        command: hostname
+        remote: []
+`
+}
+
+func TestGetRemoteCascadeOverride(t *testing.T) {
+	path := writeTestConfig(t, remoteOverrideConfigYAML())
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := cfg.Flatten()
+
+	for _, svc := range services {
+		remote := svc.GetRemote()
+		switch svc.Title {
+		case "Inherits global remote":
+			if len(remote) != 1 || remote[0] != "server1.local" {
+				t.Errorf("expected [server1.local], got %v", remote)
+			}
+		case "Local override at service":
+			if len(remote) != 0 {
+				t.Errorf("expected empty slice (local execution override), got %v", remote)
+			}
+		case "Inherits section local":
+			if len(remote) != 0 {
+				t.Errorf("expected empty slice (local execution from section), got %v", remote)
+			}
+		case "Service remote override":
+			if len(remote) != 1 || remote[0] != "server2.local" {
+				t.Errorf("expected [server2.local], got %v", remote)
+			}
+		case "Inherits section remote":
+			if len(remote) != 1 || remote[0] != "server2.local" {
+				t.Errorf("expected [server2.local], got %v", remote)
+			}
+		case "Local override in section remote":
+			if len(remote) != 0 {
+				t.Errorf("expected empty slice (local override), got %v", remote)
+			}
+		}
+	}
+}

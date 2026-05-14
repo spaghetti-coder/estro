@@ -68,6 +68,18 @@ func TestBuildCmdEmptyRemote(t *testing.T) {
 	}
 }
 
+func TestBuildCmdNilRemote(t *testing.T) {
+	cmd := config.CommandValue{"uptime"}
+	var remote config.RemoteValue
+	result, err := BuildCmd(cmd, remote)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "uptime" {
+		t.Errorf("expected %q, got %q", "uptime", result)
+	}
+}
+
 func TestBuildCmdSingleRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
 	remote := config.RemoteValue{"server1.local"}

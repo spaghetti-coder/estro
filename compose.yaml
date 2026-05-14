@@ -1,8 +1,8 @@
 ---
 services:
   estro:
-    # image: ghcr.io/spaghetti-coder/estro:latest
-    build: .                  # <- Uncomment for local builds
+    image: ghcr.io/spaghetti-coder/estro:latest
+    # build: .                  # <- Uncomment for local builds
     container_name: estro
     restart: unless-stopped
     ports:
@@ -15,6 +15,7 @@ services:
       # be same as the host machine ssh dir owner's UID, GID
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
+      # - ESTRO_CONFIG=/app/config.yaml
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/config"]
       interval: 30s

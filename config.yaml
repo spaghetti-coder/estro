@@ -7,15 +7,15 @@ global:
   # Bind address (default 127.0.0.1:3000)
   hostname: 0.0.0.0
   port: 3000
-  # secret: "mysecret"    # session secret (random per restart if omitted)
-  # ~~~ Cascading ~~~
-  timeout: 30           # command timeout in seconds (default: 60) 
-  confirm: true         # show confirm dialog before running (default: true)
-  allowed: []           # user/group who can run; null or [] = public (default: null)
-  # remote: remote.local  # run all commands on this host by default (default: local)
-  # ~~~ Cascading for sections only ~~~
+  secret:               # session secret (random per restart if omitted)
+  # ~~~ Cascading (most specific wins): global → section ~~~
   collapsable: true     # sections can be collapsed (default: true)
   columns: 3            # buttons per row on desktop ≥1024px (default: 3)
+  # ~~~ Cascading (most specific wins): global → section → service ~~~
+  timeout: 30           # command timeout in seconds (default: 60) 
+  confirm: true         # show confirm dialog before running (default: true)
+  allowed: []           # user/group who can run; [] = public (default: [])
+  remote: []            # run on remote host over ssh; [] = local (default: [])
 
 # ---------------------------------------------------------------------------
 # users: bcrypt hashes (cost 10). Groups are optional.
@@ -113,8 +113,9 @@ sections:
         command: uptime
       - title: Remote disk
         command: df -h /
-      - title: Local override   # remote: null not supported; omit to use section remote
-        command: hostname       # still runs on localhost via section cascade
+      - title: Local override
+        command: hostname
+        remote: []              # override remote, run locally instead
         allowed: [admins, guest]
 
   # ~~~ Remote: SSH chain (multi-hop) ~~~
