@@ -1,1 +1,30 @@
-/node_modules
+# Binaries
+/*.exe
+/*.exe~
+/*.out
+/estro
+
+# Coverage reports
+/coverage.out
+/coverage.html
+/*.cover
+
+# Build directories
+/bin/
+/dist/
+/vendor/
+
+# IDE files
+/.idea/
+/.vscode/
+/*.swp
+/*.swo
+/*~
+
+# OS files
+/.DS_Store
+/Thumbs.db
+
+# Go workspace file
+/go.work
+/go.work.sum
