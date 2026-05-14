@@ -1,9 +1,13 @@
-node_modules
-.git
-.github
-config.yaml
-compose.yaml
-README.md
-.eslintrc.json
-.trivyignore
-.gitignore
+# Ignore everything by default
+*
+
+# Only allow Go module and source files
+!**/*.go
+!go.mod
+!go.sum
+!entrypoint.sh
+!public/
+!public/**
+
+# Leave tests aside
+**/*_test.go

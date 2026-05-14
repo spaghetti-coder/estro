@@ -1,8 +1,9 @@
 #!/bin/sh
 
-set -e
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
-groupmod -o -g "$PGID" node
-usermod -o -u "$PUID" node
-exec su-exec node "$@"
+PUID="${PUID:-0}"
+PGID="${PGID:-0}"
+
+groupmod -o -g "${PGID}" app >/dev/null || exit
+usermod -o -u "${PUID}" app >/dev/null  || exit
+
+exec su-exec app "$@"

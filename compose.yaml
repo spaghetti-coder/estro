@@ -1,16 +1,18 @@
 ---
 services:
   estro:
-    image: ghcr.io/spaghetti-coder/estro:latest
-    # build: .  # <- Uncomment for local builds
+    # image: ghcr.io/spaghetti-coder/estro:latest
+    build: .                  # <- Uncomment for local builds
     container_name: estro
     restart: unless-stopped
     ports:
       - 3000:3000
     volumes:
-      # - ~/.ssh:/home/node/.ssh:ro   # <- To allow remote commands
+      # - ~/.ssh:/app/.ssh:ro   # <- To allow remote commands
       - ./config.yaml:/app/config.yaml:ro
     environment:
+      # *UIDs only matter when remote commands are enabled. They must
+      # be same as the host machine ssh dir owner's UID, GID
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
     healthcheck:

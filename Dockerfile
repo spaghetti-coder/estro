@@ -1,17 +1,19 @@
-FROM node:24-alpine
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w" -o /estro ./cmd/estro
 
-RUN apk add --no-cache dumb-init openssh-client shadow su-exec
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci --omit=dev
-
-COPY app.js ./
-COPY public ./public
+FROM alpine:3.23
+RUN : \
+  && apk add --no-cache openssh-client shadow su-exec \
+  && useradd -m -d /app app
+COPY --from=builder /estro /usr/local/bin/estro
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-
 EXPOSE 3000
+WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["dumb-init", "node", "app.js"]
+CMD ["estro", "-config", "config.yaml"]
