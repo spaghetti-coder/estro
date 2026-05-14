@@ -96,16 +96,47 @@ body{
   border-radius:50%;
   display:flex;align-items:center;justify-content:center;
   transition:transform var(--transition), background var(--transition), box-shadow var(--transition);
-  background:light-dark(#fff, linear-gradient(180deg,#ffd86b,#ffb74d));
-  color:light-dark(#ffb74d, inherit);
-  box-shadow:light-dark(0 8px 18px rgba(2,6,23,0.08), 0 2px 6px rgba(0,0,0,0.3) inset 0 1px 0 rgba(255,255,255,0.4));
-  border:light-dark(1px solid rgba(15,23,42,0.06), none);
+  background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,0.25);
+  border:1px solid rgba(0,0,0,0.1);
+  z-index:1;
+  color:#000;
+}
+.theme-toggle .knob svg{
+  width:18px; height:18px;
+  stroke:#000 !important;
+  fill:none;
+  stroke-width:3 !important;
+  display:block;
+}
+.theme-toggle .knob:hover{
+  background:#e5e5e5;
+  color:#000;
+}
+.theme-toggle .knob:hover svg{
+  transform: scale(1.1);
+  stroke:#000 !important;
+  stroke-width:3.5 !important;
 }
 .theme-toggle input:checked + .track + .knob{
   transform: translateX(32px);
-  background:light-dark(linear-gradient(90deg,#2b6df6,#60a5fa), linear-gradient(180deg,#fff,#f0f0f0));
-  color:light-dark(#fff, #ffb74d);
-  box-shadow:light-dark(0 2px 8px rgba(0,0,0,0.25) inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 8px rgba(0,0,0,0.25) inset 0 1px 0 rgba(255,255,255,0.8));
+  background:#2563eb !important;
+  box-shadow:0 2px 8px rgba(37,99,235,0.5);
+  color:#fff;
+}
+.theme-toggle input:checked + .track + .knob svg{
+  stroke:#fff !important;
+  stroke-width:3 !important;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+}
+.theme-toggle input:checked + .track + .knob:hover{
+  background:#1d4ed8 !important;
+  color:#fff;
+}
+.theme-toggle input:checked + .track + .knob:hover svg{
+  stroke:#fff !important;
+  stroke-width:3.5 !important;
+  filter: drop-shadow(0 0 3px rgba(0,0,0,1));
 }
 .theme-toggle:focus-within .track{
   box-shadow: 0 0 0 4px rgba(59,130,246,0.12), 0 8px 18px rgba(2,6,23,0.06);
@@ -302,6 +333,28 @@ body{
 /* forbidden button — flat grey, not yours */
 .btn.forbidden{ opacity:0.3; background:linear-gradient(180deg,#3a3f4a,#2e3340); box-shadow:none; cursor:not-allowed; }
 .btn.forbidden:hover{ transform:none; box-shadow:none; }
+
+/* disabled service button */
+.btn.service-disabled{
+  opacity:0.5;
+  border:2px dashed light-dark(rgba(0,0,0,0.18), rgba(255,255,255,0.12));
+  background:linear-gradient(180deg,light-dark(#d1d5db,#374151),light-dark(#9ca3af,#4b5563));
+  color:light-dark(#6b7280,#9fb0c8);
+  text-decoration:line-through;
+  cursor:not-allowed;
+  pointer-events:none;
+  box-shadow:none;
+}
+.btn.service-disabled:hover{ transform:none; box-shadow:none; }
+
+/* disabled section */
+.section-group.section-disabled{
+  border-style:dashed;
+  border-color:light-dark(rgba(0,0,0,0.15), rgba(255,255,255,0.08));
+}
+.section-disabled .section-header{
+  opacity:0.6;
+}
 
 /* login modal form */
 .modal-close-btn{ margin-left:auto; padding:4px 8px; font-size:20px; line-height:1; border:none; opacity:0.7; }

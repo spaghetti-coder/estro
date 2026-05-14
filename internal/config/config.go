@@ -36,6 +36,7 @@ type GlobalConfig struct {
 	Collapsable *bool       `yaml:"collapsable,omitempty"`
 	Columns     *int        `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
 	Remote      RemoteValue `yaml:"remote,omitempty"`
+	Enabled     *bool       `yaml:"enabled,omitempty"`
 }
 
 type UserConfig struct {
@@ -52,6 +53,7 @@ type SectionConfig struct {
 	Collapsable *bool           `yaml:"collapsable,omitempty"`
 	Columns     *int            `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
 	Remote      RemoteValue     `yaml:"remote,omitempty"`
+	Enabled     *bool           `yaml:"enabled,omitempty"`
 }
 
 type ServiceConfig struct {
@@ -61,6 +63,7 @@ type ServiceConfig struct {
 	Timeout *int         `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
 	Confirm *bool        `yaml:"confirm,omitempty"`
 	Remote  RemoteValue  `yaml:"remote,omitempty"`
+	Enabled *bool        `yaml:"enabled,omitempty"`
 }
 
 type FlatService struct {
@@ -70,6 +73,7 @@ type FlatService struct {
 	Timeout *int
 	Confirm *bool
 	Remote  RemoteValue
+	Enabled *bool
 
 	SectionTitle       string
 	SectionTimeout     *int
@@ -78,6 +82,8 @@ type FlatService struct {
 	SectionCollapsable *bool
 	SectionColumns     *int
 	SectionRemote      RemoteValue
+
+	SectionEnabled *bool
 
 	Global *GlobalConfig
 }
@@ -92,6 +98,7 @@ type SerializedService struct {
 	SectionColumns     int      `json:"sectionColumns"`
 	Public             bool     `json:"public"`
 	Accessible         bool     `json:"accessible"`
+	Enabled            bool     `json:"enabled"`
 	AllowedUsers       []string `json:"allowedUsers"`
 }
 
@@ -194,6 +201,7 @@ func (c *Config) Flatten() []FlatService {
 				Timeout: svc.Timeout,
 				Confirm: svc.Confirm,
 				Remote:  svc.Remote,
+				Enabled: svc.Enabled,
 
 				SectionTitle:       section.Title,
 				SectionTimeout:     section.Timeout,
@@ -202,6 +210,7 @@ func (c *Config) Flatten() []FlatService {
 				SectionCollapsable: section.Collapsable,
 				SectionColumns:     section.Columns,
 				SectionRemote:      section.Remote,
+				SectionEnabled:     section.Enabled,
 
 				Global: globalRef,
 			}
@@ -234,6 +243,10 @@ func (s *FlatService) GetAllowed() []string {
 
 func (s *FlatService) GetCollapsable() bool {
 	return cascadeBool(nil, s.SectionCollapsable, s.Global.Collapsable, DefaultCollapsable)
+}
+
+func (s *FlatService) GetEnabled() bool {
+	return cascadeBool(s.Enabled, s.SectionEnabled, s.Global.Enabled, true)
 }
 
 func (s *FlatService) GetColumns() int {
@@ -305,6 +318,7 @@ func (s *FlatService) Serialize(index int, username string, users map[string]*Us
 		SectionColumns:     s.GetColumns(),
 		Public:             isPublic,
 		Accessible:         isPublic || (username != "" && contains(allowedUsers, username)),
+		Enabled:            s.GetEnabled(),
 		AllowedUsers:       allowedUsers,
 	}
 }

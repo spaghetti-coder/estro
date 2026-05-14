@@ -1,8 +1,9 @@
 (() => {
   const STORAGE = {
-    theme:   'ui:theme',
-    section: (title) => 'section:' + title,
-    fab:     'fab:pos',
+    theme:        'ui:theme',
+    section:     (title) => 'section:' + title,
+    fab:          'fab:pos',
+    showDisabled: 'ui:show-disabled',
   };
   const FOCUS_DELAY_MS = 10;
   const RIPPLE_DURATION_MS = 600;
@@ -21,7 +22,7 @@
   let modalResolve = null, lastActive = null;
   let buttonsEl, buttonTpl;
 
-  let authAreaEl, gearBtn, gearPanel;
+  let authAreaEl, gearBtn, gearPanel, disabledToggle;
   let loginModal;
   let userFilterEl, userSelectEl, loginPasswordEl, rememberMeEl, loginErrorEl, loginSubmitEl;
   let currentUser = null;   // {username, groups} | null
@@ -366,7 +367,7 @@
   }
 
   function buildServiceButton(svc) {
-    const { id, title, timeout, confirm, public: isPub, accessible } = svc;
+    const { id, title, timeout, confirm, public: isPub, accessible, enabled } = svc;
     const btn = buttonTpl.cloneNode(true).firstElementChild;
     btn.dataset.svc = id;
     btn.id = `btn-${id}`;
@@ -383,7 +384,10 @@
       btn.append(icon, label);
     }
 
-    if (isPub || accessible) {
+    if (!enabled) {
+      btn.classList.add('service-disabled');
+      btn.disabled = true;
+    } else if (isPub || accessible) {
       btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, title, timeout, confirm); });
     } else {
       applyButtonAccessState(btn, svc);
@@ -398,21 +402,27 @@
   // track rendered sections for collapse/expand all
   let renderedSections = [];
 
-  function groupServicesBySection(services) {
+  function groupServicesBySection(services, showDisabled) {
     const sectionOrder = [];
     const sectionMap = {};
     const sectionMeta = {};
+    const sectionsAllDisabled = {};
     services.forEach((svc) => {
+      if (!svc.enabled && !showDisabled) return;
       const btn = buildServiceButton(svc);
       const key = svc.section || '';
       if (!sectionMap[key]) {
         sectionMap[key] = [];
         sectionOrder.push(key);
         sectionMeta[key] = { collapsable: svc.sectionCollapsable, columns: svc.sectionColumns };
+        sectionsAllDisabled[key] = { meta: sectionMeta[key], allDisabled: true };
       }
       sectionMap[key].push(btn);
+      if (svc.enabled) {
+        sectionsAllDisabled[key].allDisabled = false;
+      }
     });
-    return { sectionOrder, sectionMap, sectionMeta };
+    return { sectionOrder, sectionMap, sectionsAllDisabled };
   }
 
   async function loadServices() {
@@ -420,13 +430,17 @@
       const res = await fetch('/services');
       if (!res.ok) throw new Error('Failed to load services');
       const services = await res.json();
+      const showDisabled = localStorage.getItem(STORAGE.showDisabled) === 'true';
       buttonsEl.innerHTML = '';
       renderedSections = [];
-      const { sectionOrder, sectionMap, sectionMeta } = groupServicesBySection(services);
+      const { sectionOrder, sectionMap, sectionsAllDisabled } = groupServicesBySection(services, showDisabled);
       for (const key of sectionOrder) {
         if (key) {
-          const meta = sectionMeta[key];
+          const { meta, allDisabled } = sectionsAllDisabled[key];
           const section = renderSection(key, sectionMap[key], meta.collapsable !== false, meta.columns || 3);
+          if (allDisabled) {
+            section.wrapper.classList.add('section-disabled');
+          }
           buttonsEl.appendChild(section.wrapper);
           renderedSections.push(section);
         } else {
@@ -599,6 +613,7 @@
     authAreaEl  = document.getElementById('authArea');
     gearBtn     = document.getElementById('gearBtn');
     gearPanel   = document.getElementById('gearPanel');
+    disabledToggle = document.getElementById('disabledToggle');
     loginModal  = document.getElementById('loginModal');
 
     gearBtn.addEventListener('click', () => {
@@ -632,6 +647,13 @@
     const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
     setTheme(saved || (prefersDark ? 'dark' : 'light'), false);
     checkbox?.addEventListener('change', () => setTheme(checkbox.checked ? 'dark' : 'light'));
+
+    const showDisabled = localStorage.getItem(STORAGE.showDisabled) === 'true';
+    if (disabledToggle) disabledToggle.checked = showDisabled;
+    disabledToggle?.addEventListener('change', () => {
+      localStorage.setItem(STORAGE.showDisabled, String(disabledToggle.checked));
+      loadServices();
+    });
 
     document.getElementById('modalCancel')?.addEventListener('click', () => closeModal(false));
     document.getElementById('modalConfirm')?.addEventListener('click', () => closeModal(true));

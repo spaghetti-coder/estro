@@ -16,6 +16,7 @@ global:
   confirm: true         # show confirm dialog before running (default: true)
   allowed: []           # user/group who can run; [] = public (default: [])
   remote: []            # run on remote host over ssh; [] = local (default: [])
+  enabled: true         # enable/disable entity (default: true)
 
 # ---------------------------------------------------------------------------
 # users: bcrypt hashes (cost 10). Groups are optional.
@@ -134,3 +135,21 @@ sections:
         remote: [localhost, localhost, localhost]
         confirm: false
         timeout: 20
+
+  # With `enabled: false` the item is:
+  # - invisible in the UI with Disabled toggle off
+  # - visible but disabled (grayed out) with Disabled toggle on
+  - title: Disabled section
+    enabled: false              # The whole section is disabled
+    services:
+      - title: Uptime
+        command: uptime
+
+  - title: Partially disabled section
+    enabled: false
+    services:
+      - title: Uptime
+        command: uptime
+      - title: List /etc
+        command: ls -lah /etc
+        enabled: true           # The whole section is disabled

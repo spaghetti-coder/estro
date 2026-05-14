@@ -137,6 +137,10 @@ func (h *Handler) runService(c *echo.Context) error {
 
 	svc := h.services[svcIndex]
 
+	if !svc.GetEnabled() {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Service disabled"})
+	}
+
 	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
 	if !svc.IsAccessible(username, h.cfg.Users) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})

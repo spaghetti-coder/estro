@@ -30,12 +30,24 @@
               <input id="themeToggle" type="checkbox" aria-label="Toggle theme" />
               <span class="track" aria-hidden="true"></span>
               <span class="knob" aria-hidden="true">🌙</span>
+             </label>
+          </div>
+          <div class="gear-row gear-row-disabled">
+            <span class="gear-label">Disabled</span>
+            <label class="theme-toggle">
+              <input id="disabledToggle" type="checkbox" aria-label="Show disabled" />
+              <span class="track" aria-hidden="true"></span>
+              <span class="knob" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </span>
             </label>
           </div>
         </div>
       </div>
     </div>
-  </div>
   </header>
 
   <main class="container" id="app">
