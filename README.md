@@ -14,14 +14,21 @@ docker compose up -d
 ```
 </details>
 
-<details><summary>Node</summary>
+<details><summary>Go</summary>
 <p></p>
 
 ```sh
-npm install
-npm start        # production
-npm run dev      # watch mode
+go build -o estro ./cmd/estro
+./estro -config config.yaml
 ```
+
+Or run directly:
+
+```sh
+go run ./cmd/estro -config config.yaml
+```
+
+The `-config` flag can also be set via the `ESTRO_CONFIG` environment variable.
 </details>
 
 ## Configuration
@@ -91,9 +98,11 @@ docker run --rm httpd htpasswd -bnBC 10 "" YOUR_PASS | tr -d ':\n'; echo
 - Login attempts are rate-limited to 10 per 15 minutes per IP
 - `StrictHostKeyChecking=no` means SSH connections are vulnerable to MITM on untrusted networks — only use on LANs you control
 
+In general it's just a tiny pet project for my home labbing, for now with ~0 stability and no clear idea of how to make it some better than just to serve my needs. 
+
 ### Access control: `allowed: []` vs `allowed: null`
 
-Both `allowed: null` (or omitting the field) and `allowed: []` (an empty list) result in a **public** service. An empty list does **not** mean "nobody" — it means no restriction. To actually restrict access, provide at least one username or group name.
+Both `allowed: null` (or omitting the field) and `allowed: []` (an empty list) result in a **public** service. An empty list does **not** mean "nobody" — it means no restriction. To restrict access, provide at least one username or group name.
 
 ### Persistent session secret
 
@@ -102,4 +111,12 @@ If no `secret` is set in `config.yaml`, a random secret is generated on every re
 ```yaml
 global:
   secret: your-random-secret-here
+```
+
+## Development
+
+```sh
+go run ./cmd/estro -config config.yaml          # run with auto-recompile
+go test -race ./...                             # run tests
+go test -race -coverprofile=coverage.out ./...  # tests with coverage
 ```
