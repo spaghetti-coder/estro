@@ -1,28 +1,26 @@
 ---
-# ---------------------------------------------------------------------------
-# global: server + cascade defaults (all fields optional)
-#   title, subtitle   — page heading
-#   hostname, port    — bind address (default 127.0.0.1:3000)
-#   secret            — session secret (random per restart if omitted)
-#   timeout           — default command timeout in seconds (default: 60)
-#   confirm           — show confirm dialog before running (default: true)
-#   allowed           — who can see/run anything; null = public (default: null)
-#   collapsable       — sections can be collapsed (default: true)
-#   remote            — run all commands on this host by default (default: local)
-#   columns           — buttons per row on desktop ≥1024px (default: 3)
-# ---------------------------------------------------------------------------
 global:
+  # ~~~ Server ~~~
+  # Page heading
   title: Estro
   subtitle: Config test suite
+  # Bind address (default 127.0.0.1:3000)
   hostname: 0.0.0.0
   port: 3000
-  timeout: 30
-  confirm: true
-  # allowed: [admins]   # uncomment to lock down the whole app
+  # secret: "mysecret"    # session secret (random per restart if omitted)
+  # ~~~ Cascading ~~~
+  timeout: 30           # command timeout in seconds (default: 60) 
+  confirm: true         # show confirm dialog before running (default: true)
+  allowed: []           # user/group who can run; null or [] = public (default: null)
+  # remote: remote.local  # run all commands on this host by default (default: local)
+  # ~~~ Cascading for sections only ~~~
+  collapsable: true     # sections can be collapsed (default: true)
+  columns: 3            # buttons per row on desktop ≥1024px (default: 3)
 
 # ---------------------------------------------------------------------------
 # users: bcrypt hashes (cost 10). Groups are optional.
-# Generate: docker run --rm httpd htpasswd -bnBC 10 "" PASS | tr -d ':\n'
+# Generate password with:
+#   docker run --rm httpd htpasswd -bnBC 10 "" PASS | tr -d ':\n'
 # ---------------------------------------------------------------------------
 users:
   alice:                  # Password: changeme1
@@ -34,33 +32,28 @@ users:
   guest:                  # Password: changeme3
     password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
 
-# ---------------------------------------------------------------------------
-# sections: groups of services.
-# Section-level fields cascade to all services inside (service value wins).
-# collapsable / columns do not apply at service level.
-# ---------------------------------------------------------------------------
 sections:
-
-  # --- Public, always open, single-column -----------------------------------
-  # collapsable: false  → no chevron, always expanded
-  # columns: 1          → one button per row
+  # Public (no `allowed`)
+  # Always open (collapsable: false)
+  # Single-column (columns: 1)
   - title: Public Info
     collapsable: false
     columns: 1
     services:
-      - title: Uptime          # confirm inherits global true
+      - title: Uptime           # confirm inherits global true
         command: uptime
       - title: Date
         command: date
-        confirm: false         # override: no dialog for this service
+        confirm: false          # override: no dialog for this service
 
-  # --- Public, collapsable, default 3 columns --------------------------------
-  # No allowed → public. No columns → inherits global default (3).
+  # Public (no `allowed`)
+  # Collapsable (inherits `global.collapsable`)
+  # 3 columns (inherits `global.columns`)
   - title: System
     services:
       - title: Disk usage
-        command:
-          - df -h /            # multi-step: joined with &&
+        command:                # multi-step: joined with &&
+          - df -h /            
           - echo "---"
           - df -h --total | tail -1
       - title: Memory
@@ -68,34 +61,36 @@ sections:
         confirm: false
       - title: CPU
         command: ps aux --sort=-%cpu | head -10
-        timeout: 10            # service-level timeout overrides section + global
+        timeout: 10             # service-level timeout overrides section + global
       - title: Load
         command: cat /proc/loadavg
         confirm: false
 
-  # --- Section-level timeout + confirm override, 2 columns ------------------
   - title: Logs
-    timeout: 15                # all services in this section default to 15s
-    confirm: false             # all services skip dialog unless overridden
+    timeout: 15                 # all services in this section default to 15s
+    confirm: false              # all services skip dialog unless overridden
     columns: 2
     services:
       - title: Syslog (20)
         command: journalctl -n 20 --no-pager
-      - title: Kernel log
-        command: dmesg | tail -20
       - title: Auth log
         command: journalctl -n 20 -u ssh --no-pager
-        confirm: true          # override section confirm back on
-        timeout: 5             # override section timeout
+        confirm: true           # override section confirm back on
+        timeout: 5              # override section timeout
 
-  # --- Restricted to admins group, 4 columns ---------------------------------
-  # allowed: [admins] → only alice and bob can see/run
-  - title: Admin
-    allowed: [admins]
+  - title: Mixed Access (admins by default)
+    allowed: [admins]           # restrict to admins group users by default
     columns: 4
     services:
       - title: List /etc
         command: ls -lah /etc
+      - title: Public status
+        command: uptime
+        allowed: []             # overrides section restriction, now public
+        confirm: false
+      - title: Guest only date
+        command: date
+        allowed: [guest]        # restricted to user only, not group
       - title: Who
         command: who
         confirm: false
@@ -105,44 +100,24 @@ sections:
       - title: Routes
         command: ip route
         confirm: false
-      - title: Reload nginx
-        command: sudo systemctl reload nginx
       - title: Disk inodes
         command: df -i
         confirm: false
 
-  # --- Mixed access: section restricts, one service overrides to public ------
-  # allowed: []  on a service = explicit empty = public (overrides parent)
-  - title: Mixed Access
-    allowed: [admins]
-    services:
-      - title: Public status   # explicit [] overrides section restriction
-        command: uptime
-        allowed: []
-        confirm: false
-      - title: Admin only
-        command: id
-                               # inherits allowed: [admins] from section
-      - title: Guest allowed   # specific user, not group
-        command: date
-        allowed: [guest]
-
-  # --- Remote: single host ---------------------------------------------------
-  # remote: host    → ssh to host, then run command
   - title: Remote (single hop)
     allowed: [admins]
-    remote: server1.local
+    remote: localhost           # command → ssh to host, then run command
     confirm: false
     services:
       - title: Remote uptime
         command: uptime
       - title: Remote disk
         command: df -h /
-      - title: Local override  # remote: null not supported; omit to use section remote
-        command: hostname       # still runs on server1.local via section cascade
+      - title: Local override   # remote: null not supported; omit to use section remote
+        command: hostname       # still runs on localhost via section cascade
         allowed: [admins, guest]
 
-  # --- Remote: SSH chain (multi-hop) ----------------------------------------
+  # ~~~ Remote: SSH chain (multi-hop) ~~~
   # remote: [host1, host2] → ssh host1, then ssh host2, then run
   - title: Remote (chain)
     allowed: [admins]
@@ -151,10 +126,10 @@ sections:
     services:
       - title: Two-hop uptime
         command: uptime
-        remote: [server1.local, server2.local]
+        remote: [localhost, localhost]
         confirm: false
       - title: Three-hop date
         command: date
-        remote: [server1.local, server2.local, server3.local]
+        remote: [localhost, localhost, localhost]
         confirm: false
         timeout: 20
