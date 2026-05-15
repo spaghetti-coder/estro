@@ -76,9 +76,12 @@ func (h *Handler) getConfig(c *echo.Context) error {
 
 func (h *Handler) listServices(c *echo.Context) error {
 	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
-	result := make([]config.SerializedService, len(h.services))
+	var result []config.SerializedService
 	for i, svc := range h.services {
-		result[i] = svc.Serialize(i, username, h.cfg.Users)
+		if svc.GetRestricted() && !svc.IsAccessible(username, h.cfg.Users) {
+			continue
+		}
+		result = append(result, svc.Serialize(i, username, h.cfg.Users))
 	}
 	return c.JSON(http.StatusOK, result)
 }
@@ -142,6 +145,9 @@ func (h *Handler) runService(c *echo.Context) error {
 	}
 
 	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
+	if svc.GetRestricted() && !svc.IsAccessible(username, h.cfg.Users) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Unknown service"})
+	}
 	if !svc.IsAccessible(username, h.cfg.Users) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
 	}

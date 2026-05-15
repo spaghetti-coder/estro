@@ -15,6 +15,7 @@ global:
   timeout: 30           # command timeout in seconds (default: 60) 
   confirm: true         # show confirm dialog before running (default: true)
   allowed: []           # user/group who can run; [] = public (default: [])
+  restricted: false     # entities visible to all, interaction gated by allowed (default: true = hidden)
   remote: []            # run on remote host over ssh; [] = local (default: [])
   enabled: true         # enable/disable entity (default: true)
 
@@ -81,6 +82,7 @@ sections:
 
   - title: Mixed Access (admins by default)
     allowed: [admins]           # restrict to admins group users by default
+    restricted: true            # hidden from non-admins (explicit, same as default)
     columns: 4
     services:
       - title: List /etc
@@ -92,9 +94,10 @@ sections:
       - title: Guest only date
         command: date
         allowed: [guest]        # restricted to user only, not group
-      - title: Who
+      - title: Unrestricted Who
         command: who
         confirm: false
+        restricted: false       # overrides section restriction, now public
       - title: Processes
         command: ps aux | head -20
         confirm: false
@@ -104,6 +107,16 @@ sections:
       - title: Disk inodes
         command: df -i
         confirm: false
+
+  - title: Visible by bob only
+    allowed: [bob]
+    restricted: true            # hidden from non-admins (restricted=true = not visible)
+    confirm: false
+    services:
+      - title: Status check
+        command: uptime
+      - title: Admin process list
+        command: ps aux | head -20
 
   - title: Remote (single hop)
     allowed: [admins]

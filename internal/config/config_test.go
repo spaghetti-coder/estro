@@ -22,6 +22,7 @@ global:
   port: 3000
   timeout: 30
   confirm: true
+  restricted: false
 users:
   alice:
     password: '$2y$10$hash1'

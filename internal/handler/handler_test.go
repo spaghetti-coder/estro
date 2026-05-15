@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ global:
   port: 3000
   timeout: 30
   confirm: true
+  restricted: false
 users:
   alice:
     password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
@@ -508,7 +510,7 @@ func TestRunServiceForbidden(t *testing.T) {
 		t.Skip("no restricted services found to test")
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/run/"+string(rune('0'+restrictedIndex)), nil)
+	req := httptest.NewRequest(http.MethodPost, "/run/"+strconv.Itoa(restrictedIndex), nil)
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -566,6 +568,187 @@ func loginAs(t *testing.T, e *echo.Echo, username, password string, rememberMe b
 		t.Fatal("expected session cookie after login")
 	}
 	return cookie
+}
+
+const restrictedTestConfigYAML = `---
+global:
+  title: Estro
+  subtitle: Restricted test
+  hostname: 127.0.0.1
+  port: 3000
+  timeout: 30
+  confirm: true
+  restricted: false
+users:
+  alice:
+    password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
+    groups: [admins]
+  guest:
+    password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
+sections:
+  - title: Public section
+    services:
+      - title: Uptime
+        command: uptime
+  - title: Admin section
+    allowed: [admins]
+    restricted: true
+    services:
+      - title: Admin tool
+        command: id
+  - title: Visible restricted section
+    allowed: [admins]
+    restricted: false
+    services:
+      - title: Visible admin tool
+        command: whoami
+`
+
+func setupRestrictedTestEnv(t *testing.T) (*echo.Echo, *Handler) {
+	t.Helper()
+	tmp, err := os.CreateTemp("", "config-restricted-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tmp.WriteString(restrictedTestConfigYAML); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		t.Fatal(err)
+	}
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	cfg, err := config.Load(tmp.Name())
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	store := job.NewStore()
+	sessionSecret := GenerateSessionSecret()
+	sessionStore := NewSessionStore(sessionSecret)
+	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
+
+	e := echo.New()
+	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
+	e.Use(appMiddleware.FaviconCORS())
+	e.Use(SessionMiddleware(sessionStore))
+	e.Use(echoMiddleware.RequestLogger())
+	h.RegisterRoutes(e)
+
+	return e, h
+}
+
+func TestListServices_RestrictedHiddenFromUnauthorized(t *testing.T) {
+	e, _ := setupRestrictedTestEnv(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/services", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	for _, svc := range result {
+		title, _ := svc["title"].(string)
+		if title == "Admin tool" {
+			t.Error("restricted service 'Admin tool' should not appear for unauthenticated user")
+		}
+	}
+}
+
+func TestListServices_RestrictedVisibleForAllowedUser(t *testing.T) {
+	e, _ := setupRestrictedTestEnv(t)
+
+	cookie := loginAs(t, e, "alice", "changeme1", false)
+
+	req := httptest.NewRequest(http.MethodGet, "/services", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	found := false
+	for _, svc := range result {
+		title, _ := svc["title"].(string)
+		if title == "Admin tool" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("restricted service 'Admin tool' should appear for alice (admin)")
+	}
+}
+
+func TestListServices_RestrictedFalse_VisibleButNotAccessible(t *testing.T) {
+	e, _ := setupRestrictedTestEnv(t)
+
+	cookie := loginAs(t, e, "guest", "changeme3", false)
+
+	req := httptest.NewRequest(http.MethodGet, "/services", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	found := false
+	for _, svc := range result {
+		title, _ := svc["title"].(string)
+		if title == "Visible admin tool" {
+			found = true
+			accessible, _ := svc["accessible"].(bool)
+			if accessible {
+				t.Error("restricted=false service should be visible but not accessible to guest")
+			}
+		}
+	}
+	if !found {
+		t.Error("restricted=false service should be visible to guest even if not accessible")
+	}
+}
+
+func TestRunService_RestrictedHidden_Returns404(t *testing.T) {
+	e, _ := setupRestrictedTestEnv(t)
+
+	cookie := loginAs(t, e, "guest", "changeme3", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/run/1", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for restricted-hidden service, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if result["error"] != "Unknown service" {
+		t.Errorf("expected 'Unknown service', got '%s'", result["error"])
+	}
 }
 
 func findSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
