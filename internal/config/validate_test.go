@@ -603,6 +603,245 @@ sections:
   }
 }
 
+func TestValidateGroupRefsValidGroup(t *testing.T) {
+	input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+        allowed: [admins]
+users:
+  alice:
+    password: hash
+    groups: [admins]`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	for _, e := range errors {
+		if strings.Contains(e.Path, "allowed") {
+			t.Errorf("unexpected allowed error: %v", e)
+		}
+	}
+}
+
+func TestValidateGroupRefsValidUsername(t *testing.T) {
+	input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+        allowed: [alice]
+users:
+  alice:
+    password: hash`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	for _, e := range errors {
+		if strings.Contains(e.Path, "allowed") {
+			t.Errorf("unexpected allowed error: %v", e)
+		}
+	}
+}
+
+func TestValidateGroupRefsInvalidGroup(t *testing.T) {
+	input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+        allowed: [nonexistent]
+users:
+  alice:
+    password: hash`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	found := false
+	for _, e := range errors {
+		if e.Path == "sections[0].services[0].allowed" && strings.Contains(e.Msg, "unknown user or group") && strings.Contains(e.Msg, "nonexistent") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected unknown group error, got %+v", errors)
+	}
+}
+
+func TestValidateGroupRefsInvalidInService(t *testing.T) {
+	input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+        allowed: [nogroup]
+users:
+  alice:
+    password: hash`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	found := false
+	for _, e := range errors {
+		if e.Path == "sections[0].services[0].allowed" && strings.Contains(e.Msg, "nogroup") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error at sections[0].services[0].allowed, got %+v", errors)
+	}
+}
+
+func TestValidateGroupRefsInvalidInGlobal(t *testing.T) {
+	input := `global:
+  allowed: [noone]
+users:
+  alice:
+    password: hash
+sections:
+  - title: T
+    services:
+      - title: S
+        command: echo`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	found := false
+	for _, e := range errors {
+		if e.Path == "global.allowed" && strings.Contains(e.Msg, "noone") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error at global.allowed, got %+v", errors)
+	}
+}
+
+func TestValidateGroupRefsInvalidInSection(t *testing.T) {
+	input := `sections:
+  - title: T
+    allowed: [nogroup]
+    services:
+      - title: S
+        command: echo
+users:
+  alice:
+    password: hash`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	found := false
+	for _, e := range errors {
+		if e.Path == "sections[0].allowed" && strings.Contains(e.Msg, "nogroup") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error at sections[0].allowed, got %+v", errors)
+	}
+}
+
+func TestValidateGroupRefsMixedValidInvalid(t *testing.T) {
+	input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+        allowed: [admins, nonexistent]
+users:
+  alice:
+    password: hash
+    groups: [admins]`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	if len(errors) != 1 {
+		t.Fatalf("expected 1 error, got %d: %+v", len(errors), errors)
+	}
+	if errors[0].Path != "sections[0].services[0].allowed" || !strings.Contains(errors[0].Msg, "nonexistent") {
+		t.Errorf("expected error for nonexistent only, got %+v", errors[0])
+	}
+	if strings.Contains(errors[0].Msg, "admins") {
+		t.Errorf("admins should be valid, not reported as error: %+v", errors[0])
+	}
+}
+
+func TestValidateGroupRefsNilAllowed(t *testing.T) {
+	input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+users:
+  alice:
+    password: hash`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	if len(errors) != 0 {
+		t.Errorf("nil allowed should produce no cross-ref errors, got %+v", errors)
+	}
+}
+
+func TestValidateGroupRefsEmptyAllowed(t *testing.T) {
+	input := `global:
+  port: 3000
+  allowed: []
+sections:
+  - title: T
+    allowed: []
+    services:
+      - title: S
+        command: echo
+        allowed: []
+users:
+  alice:
+    password: hash`
+	cfg := mustParseConfig(t, input)
+	errors := validateGroupRefs(cfg)
+	if len(errors) != 0 {
+		t.Errorf("empty allowed arrays should produce no cross-ref errors, got %+v", errors)
+	}
+}
+
+func TestValidateGroupRefsCombinedWithOtherErrors(t *testing.T) {
+	input := `global:
+  port: 0
+  allowed: [noone]
+sections:
+  - title: ""
+    services:
+      - title: S
+        command: echo
+users:
+  alice:
+    password: ""`
+	cfg := mustParseConfig(t, input)
+	errors := ValidateSchema(cfg, nil)
+	foundGroupRef := false
+	foundPort := false
+	foundTitle := false
+	foundPassword := false
+	for _, e := range errors {
+		if e.Path == "global.allowed" && strings.Contains(e.Msg, "noone") {
+			foundGroupRef = true
+		}
+		if e.Path == "global.port" {
+			foundPort = true
+		}
+		if e.Path == "sections[0].title" {
+			foundTitle = true
+		}
+		if e.Path == "users.alice.password" {
+			foundPassword = true
+		}
+	}
+	if !foundGroupRef {
+		t.Errorf("expected group ref error, got %+v", errors)
+	}
+	if !foundPort {
+		t.Errorf("expected port error, got %+v", errors)
+	}
+	if !foundTitle {
+		t.Errorf("expected title error, got %+v", errors)
+	}
+	if !foundPassword {
+		t.Errorf("expected password error, got %+v", errors)
+	}
+}
+
 func TestLoadInvalidConfigPreventsStart(t *testing.T) {
   content := `unknown_field: oops
 global:

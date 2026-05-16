@@ -78,7 +78,58 @@ func ValidateSchema(cfg *Config, node *yaml.Node) []ValidationError {
 	}
 	if cfg != nil {
 		validateValues(cfg, &errors)
+		errors = append(errors, validateGroupRefs(cfg)...)
 	}
+	return errors
+}
+
+func validateGroupRefs(cfg *Config) []ValidationError {
+	knownGroups := make(map[string]bool)
+	for name, user := range cfg.Users {
+		knownGroups[name] = true
+		for _, g := range user.Groups {
+			knownGroups[g] = true
+		}
+	}
+
+	var errors []ValidationError
+
+	if cfg.Global != nil && len(cfg.Global.Allowed) > 0 {
+		for _, name := range cfg.Global.Allowed {
+			if !knownGroups[name] {
+				errors = append(errors, ValidationError{
+					Path: "global.allowed",
+					Msg:  fmt.Sprintf("unknown user or group %q", name),
+				})
+			}
+		}
+	}
+
+	for i, sec := range cfg.Sections {
+		if len(sec.Allowed) > 0 {
+			for _, name := range sec.Allowed {
+				if !knownGroups[name] {
+					errors = append(errors, ValidationError{
+						Path: fmt.Sprintf("sections[%d].allowed", i),
+						Msg:  fmt.Sprintf("unknown user or group %q", name),
+					})
+				}
+			}
+		}
+		for j, svc := range sec.Services {
+			if len(svc.Allowed) > 0 {
+				for _, name := range svc.Allowed {
+					if !knownGroups[name] {
+						errors = append(errors, ValidationError{
+							Path: fmt.Sprintf("sections[%d].services[%d].allowed", i, j),
+							Msg:  fmt.Sprintf("unknown user or group %q", name),
+						})
+					}
+				}
+			}
+		}
+	}
+
 	return errors
 }
 
