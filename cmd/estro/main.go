@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -14,15 +13,11 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/spaghetti-coder/estro"
+	"github.com/spaghetti-coder/estro/internal/auth"
 	"github.com/spaghetti-coder/estro/internal/config"
 	"github.com/spaghetti-coder/estro/internal/handler"
 	"github.com/spaghetti-coder/estro/internal/job"
 	appMiddleware "github.com/spaghetti-coder/estro/internal/middleware"
-)
-
-const (
-	defaultHostname = "127.0.0.1"
-	defaultPort     = 3000
 )
 
 func main() {
@@ -45,19 +40,19 @@ func main() {
 
 	cmdCtx, cmdCancel := context.WithCancel(context.Background())
 
-	sessionSecret := handler.GenerateSessionSecret()
+	sessionSecret := auth.GenerateSessionSecret()
 	globalCfg := cfg.GetGlobal()
 	if globalCfg.Secret != nil {
 		sessionSecret = []byte(*globalCfg.Secret)
 	}
-	sessionStore := handler.NewSessionStore(sessionSecret)
+	sessionStore := auth.NewSessionStore(sessionSecret)
 
 	h := handler.NewHandler(cfg, jobStore, sessionStore, sessionSecret, cmdCtx)
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
 	e.Use(appMiddleware.FaviconCORS())
-	e.Use(handler.SessionMiddleware(sessionStore))
+	e.Use(auth.SessionMiddleware(sessionStore))
 	e.Use(middleware.RequestLogger())
 
 	h.RegisterRoutes(e)
@@ -73,7 +68,7 @@ func main() {
 		e.StaticFS("/", subFS)
 	}
 
-	addr := resolveAddr(cfg.GetGlobal())
+	addr := cfg.GetGlobal().Addr()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -85,7 +80,7 @@ func main() {
 		jobStore.MarkAllRunningAsError("server shutting down")
 	}()
 
-	slog.Info("Estro listening", "address", fmt.Sprintf("http://%s", addr))
+	slog.Info("Estro listening", "address", "http://"+addr)
 	sc := echo.StartConfig{
 		Address:         addr,
 		GracefulTimeout: 10 * time.Second,
@@ -93,16 +88,4 @@ func main() {
 	if err := sc.Start(ctx, e); err != nil {
 		slog.Error("server stopped", "error", err)
 	}
-}
-
-func resolveAddr(global *config.GlobalConfig) string {
-	hostname := defaultHostname
-	port := defaultPort
-	if global.Hostname != nil {
-		hostname = *global.Hostname
-	}
-	if global.Port != nil {
-		port = *global.Port
-	}
-	return fmt.Sprintf("%s:%d", hostname, port)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo/v5"
 	echoMiddleware "github.com/labstack/echo/v5/middleware"
+	"github.com/spaghetti-coder/estro/internal/auth"
 	"github.com/spaghetti-coder/estro/internal/config"
 	"github.com/spaghetti-coder/estro/internal/job"
 	appMiddleware "github.com/spaghetti-coder/estro/internal/middleware"
@@ -95,15 +96,15 @@ func setupTestEnv(t *testing.T) (*echo.Echo, *Handler, *job.Store, sessions.Stor
 	t.Helper()
 	cfg := loadTestConfig(t)
 	store := job.NewStore()
-	sessionSecret := GenerateSessionSecret()
-	sessionStore := NewSessionStore(sessionSecret)
+	sessionSecret := auth.GenerateSessionSecret()
+	sessionStore := auth.NewSessionStore(sessionSecret)
 
 	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
 	e.Use(appMiddleware.FaviconCORS())
-	e.Use(SessionMiddleware(sessionStore))
+	e.Use(auth.SessionMiddleware(sessionStore))
 	e.Use(echoMiddleware.RequestLogger())
 
 	h.RegisterRoutes(e)
@@ -422,8 +423,8 @@ func TestGetJobCompleted(t *testing.T) {
 	store.Set("test-job", &job.Job{Status: "done", Title: "Test", Stdout: "hello"})
 
 	cfg := loadTestConfig(t)
-	sessionSecret := GenerateSessionSecret()
-	sessionStore := NewSessionStore(sessionSecret)
+	sessionSecret := auth.GenerateSessionSecret()
+	sessionStore := auth.NewSessionStore(sessionSecret)
 	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
 
 	e := echo.New()
@@ -624,14 +625,14 @@ func setupRestrictedTestEnv(t *testing.T) (*echo.Echo, *Handler) {
 	}
 
 	store := job.NewStore()
-	sessionSecret := GenerateSessionSecret()
-	sessionStore := NewSessionStore(sessionSecret)
+	sessionSecret := auth.GenerateSessionSecret()
+	sessionStore := auth.NewSessionStore(sessionSecret)
 	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
 	e.Use(appMiddleware.FaviconCORS())
-	e.Use(SessionMiddleware(sessionStore))
+	e.Use(auth.SessionMiddleware(sessionStore))
 	e.Use(echoMiddleware.RequestLogger())
 	h.RegisterRoutes(e)
 

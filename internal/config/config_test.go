@@ -237,3 +237,26 @@ func TestConfigResponse(t *testing.T) {
 		t.Errorf("expected 3 users, got %d", len(resp.Users))
 	}
 }
+
+func TestGlobalConfigAddr(t *testing.T) {
+	ptrStr := func(s string) *string { return &s }
+	ptrInt := func(i int) *int { return &i }
+
+	tests := []struct {
+		name   string
+		global *GlobalConfig
+		want   string
+	}{
+		{"defaults", &GlobalConfig{}, "127.0.0.1:3000"},
+		{"custom hostname", &GlobalConfig{Hostname: ptrStr("0.0.0.0")}, "0.0.0.0:3000"},
+		{"custom port", &GlobalConfig{Port: ptrInt(8080)}, "127.0.0.1:8080"},
+		{"both custom", &GlobalConfig{Hostname: ptrStr("0.0.0.0"), Port: ptrInt(8080)}, "0.0.0.0:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.global.Addr(); got != tt.want {
+				t.Errorf("Addr() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -1,3 +1,4 @@
+// Package config handles YAML configuration loading, validation, and cascading defaults for Estro.
 package config
 
 import (
@@ -12,159 +13,85 @@ import (
 )
 
 const (
-	DefaultTimeout     = 60
-	DefaultConfirm     = true
+	// DefaultTimeout is the default command execution timeout in seconds.
+	DefaultTimeout = 60
+	// DefaultConfirm is the default value for requiring user confirmation before running a command.
+	DefaultConfirm = true
+	// DefaultCollapsable is the default value for whether sections start collapsed in the UI.
 	DefaultCollapsable = true
-	DefaultColumns     = 3
+	// DefaultColumns is the default number of columns in the service grid.
+	DefaultColumns = 3
+
+	defaultHostname = "127.0.0.1"
+	defaultPort     = 3000
 )
 
+// Addr returns the host:port address string for the server to listen on,
+// falling back to defaults (127.0.0.1:3000) when not explicitly set.
+func (g *GlobalConfig) Addr() string {
+	hostname := defaultHostname
+	port := defaultPort
+	if g.Hostname != nil {
+		hostname = *g.Hostname
+	}
+	if g.Port != nil {
+		port = *g.Port
+	}
+	return fmt.Sprintf("%s:%d", hostname, port)
+}
+
+// Config represents the top-level Estro configuration loaded from YAML.
 type Config struct {
 	Global   *GlobalConfig          `yaml:"global,omitempty" validate:"omitempty"`
 	Users    map[string]*UserConfig `yaml:"users,omitempty" validate:"omitempty,dive"`
 	Sections []SectionConfig        `yaml:"sections,omitempty" validate:"omitempty,dive"`
 }
 
+// GlobalConfig holds settings that apply across all sections and services.
 type GlobalConfig struct {
-	Title       *string     `yaml:"title,omitempty"`
-	Subtitle    *string     `yaml:"subtitle,omitempty"`
-	Hostname    *string     `yaml:"hostname,omitempty"`
-	Port        *int        `yaml:"port,omitempty" validate:"omitempty,gt=0"`
-	Secret      *string     `yaml:"secret,omitempty"`
-	Timeout     *int        `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
-	Confirm     *bool       `yaml:"confirm,omitempty"`
-	Allowed     []string    `yaml:"allowed,omitempty"`
-	Collapsable *bool       `yaml:"collapsable,omitempty"`
-	Columns     *int        `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
-	Remote      RemoteValue `yaml:"remote,omitempty"`
-	Enabled     *bool       `yaml:"enabled,omitempty"`
-	Restricted  *bool       `yaml:"restricted,omitempty"`
+	Title         *string `yaml:"title,omitempty"`
+	Subtitle      *string `yaml:"subtitle,omitempty"`
+	Hostname      *string `yaml:"hostname,omitempty"`
+	Port          *int    `yaml:"port,omitempty" validate:"omitempty,gt=0"`
+	Secret        *string `yaml:"secret,omitempty"`
+	CascadeFields `yaml:",inline"`
+	LayoutFields  `yaml:",inline"`
 }
 
+// UserConfig defines a single user's credentials and group memberships.
 type UserConfig struct {
 	Password string   `yaml:"password" validate:"required"`
 	Groups   []string `yaml:"groups,omitempty"`
 }
 
+// SectionConfig groups services under a common heading in the UI.
 type SectionConfig struct {
-	Title       string          `yaml:"title" validate:"required"`
-	Services    []ServiceConfig `yaml:"services,omitempty" validate:"omitempty,dive"`
-	Allowed     []string        `yaml:"allowed,omitempty"`
-	Timeout     *int            `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
-	Confirm     *bool           `yaml:"confirm,omitempty"`
-	Collapsable *bool           `yaml:"collapsable,omitempty"`
-	Columns     *int            `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
-	Remote      RemoteValue     `yaml:"remote,omitempty"`
-	Enabled     *bool           `yaml:"enabled,omitempty"`
-	Restricted  *bool           `yaml:"restricted,omitempty"`
+	Title         string          `yaml:"title" validate:"required"`
+	Services      []ServiceConfig `yaml:"services,omitempty" validate:"omitempty,dive"`
+	CascadeFields `yaml:",inline"`
+	LayoutFields  `yaml:",inline"`
 }
 
+// ServiceConfig defines a single runnable command exposed in the UI.
 type ServiceConfig struct {
-	Title   string       `yaml:"title" validate:"required"`
-	Command CommandValue `yaml:"command" validate:"required"`
-	Allowed []string     `yaml:"allowed,omitempty"`
-	Timeout *int         `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
-	Confirm *bool        `yaml:"confirm,omitempty"`
-	Remote  RemoteValue  `yaml:"remote,omitempty"`
-	Enabled *bool        `yaml:"enabled,omitempty"`
-	Restricted *bool     `yaml:"restricted,omitempty"`
+	Title         string       `yaml:"title" validate:"required"`
+	Command       CommandValue `yaml:"command" validate:"required"`
+	CascadeFields `yaml:",inline"`
 }
 
-type FlatService struct {
-	Title   string
-	Command CommandValue
-	Allowed []string
-	Timeout *int
-	Confirm *bool
-	Remote  RemoteValue
-	Enabled *bool
-	Restricted *bool
-
-	SectionTitle       string
-	SectionTimeout     *int
-	SectionConfirm     *bool
-	SectionAllowed     []string
-	SectionCollapsable *bool
-	SectionColumns     *int
-	SectionRemote      RemoteValue
-
-	SectionEnabled *bool
-	SectionRestricted *bool
-
-	Global *GlobalConfig
-}
-
-type SerializedService struct {
-	ID                 int      `json:"id"`
-	Title              string   `json:"title"`
-	Timeout            int      `json:"timeout"`
-	Confirm            bool     `json:"confirm"`
-	Section            *string  `json:"section"`
-	SectionCollapsable bool     `json:"sectionCollapsable"`
-	SectionColumns     int      `json:"sectionColumns"`
-	Public             bool     `json:"public"`
-	Accessible         bool     `json:"accessible"`
-	Enabled            bool     `json:"enabled"`
-	AllowedUsers       []string `json:"allowedUsers"`
-	Restricted         bool     `json:"restricted"`
-}
-
-type ConfigResponse struct {
-	Title    string   `json:"title"`
-	Subtitle string   `json:"subtitle"`
-	Users    []string `json:"users"`
-}
-
-type RemoteValue []string
-
-func (r *RemoteValue) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
-	case yaml.ScalarNode:
-		*r = []string{value.Value}
-		return nil
-	case yaml.SequenceNode:
-		var hosts []string
-		if err := value.Decode(&hosts); err != nil {
-			return err
-		}
-		*r = hosts
-		return nil
-	default:
-		return fmt.Errorf("remote must be a string or array of strings")
-	}
-}
-
-type CommandValue []string
-
-func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
-	case yaml.ScalarNode:
-		*c = []string{value.Value}
-		return nil
-	case yaml.SequenceNode:
-		var cmds []string
-		if err := value.Decode(&cmds); err != nil {
-			return err
-		}
-		*c = cmds
-		return nil
-	default:
-		return fmt.Errorf("command must be a string or array of strings")
-	}
-}
-
-var validate *validator.Validate
-
-func init() {
-	validate = validator.New()
-	validate.RegisterTagNameFunc(func(fld reflect.StructField) string {
+func newValidator() *validator.Validate {
+	v := validator.New()
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
 		name := strings.SplitN(fld.Tag.Get("yaml"), ",", 2)[0]
 		if name == "-" || name == "" {
 			return fld.Name
 		}
 		return name
 	})
+	return v
 }
 
+// Load reads and validates the YAML configuration file at path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -176,7 +103,8 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config YAML: %w", err)
 	}
 
-	if err := validate.Struct(cfg); err != nil {
+	v := newValidator()
+	if err := v.Struct(cfg); err != nil {
 		return nil, formatValidationError(err)
 	}
 
@@ -195,171 +123,7 @@ func formatValidationError(err error) error {
 	return err
 }
 
-func (c *Config) Flatten() []FlatService {
-	var services []FlatService
-	globalRef := c.GetGlobal()
-	for _, section := range c.Sections {
-		for _, svc := range section.Services {
-			flat := FlatService{
-				Title:   svc.Title,
-				Command: svc.Command,
-				Allowed: svc.Allowed,
-				Timeout: svc.Timeout,
-				Confirm: svc.Confirm,
-				Remote:    svc.Remote,
-				Enabled:    svc.Enabled,
-				Restricted: svc.Restricted,
-
-				SectionTitle:       section.Title,
-				SectionTimeout:     section.Timeout,
-				SectionConfirm:     section.Confirm,
-				SectionAllowed:     section.Allowed,
-				SectionCollapsable: section.Collapsable,
-				SectionColumns:     section.Columns,
-				SectionRemote:      section.Remote,
-				SectionEnabled:     section.Enabled,
-				SectionRestricted: section.Restricted,
-
-				Global: globalRef,
-			}
-			services = append(services, flat)
-		}
-	}
-	return services
-}
-
-func (s *FlatService) GetTimeout() int {
-	globalTimeout := (*int)(nil)
-	if s.Global != nil {
-		globalTimeout = s.Global.Timeout
-	}
-	return cascadeInt(s.Timeout, s.SectionTimeout, globalTimeout, DefaultTimeout)
-}
-
-func (s *FlatService) GetConfirm() bool {
-	globalConfirm := (*bool)(nil)
-	if s.Global != nil {
-		globalConfirm = s.Global.Confirm
-	}
-	return cascadeBool(s.Confirm, s.SectionConfirm, globalConfirm, DefaultConfirm)
-}
-
-func (s *FlatService) GetAllowed() []string {
-	if s.Allowed != nil {
-		return s.Allowed
-	}
-	if s.SectionAllowed != nil {
-		return s.SectionAllowed
-	}
-	if s.Global != nil && s.Global.Allowed != nil {
-		return s.Global.Allowed
-	}
-	return nil
-}
-
-func (s *FlatService) GetCollapsable() bool {
-	globalCollapsable := (*bool)(nil)
-	if s.Global != nil {
-		globalCollapsable = s.Global.Collapsable
-	}
-	return cascadeBool(nil, s.SectionCollapsable, globalCollapsable, DefaultCollapsable)
-}
-
-func (s *FlatService) GetEnabled() bool {
-	globalEnabled := (*bool)(nil)
-	if s.Global != nil {
-		globalEnabled = s.Global.Enabled
-	}
-	return cascadeBool(s.Enabled, s.SectionEnabled, globalEnabled, true)
-}
-
-func (s *FlatService) GetRestricted() bool {
-	globalRestricted := (*bool)(nil)
-	if s.Global != nil {
-		globalRestricted = s.Global.Restricted
-	}
-	return cascadeBool(s.Restricted, s.SectionRestricted, globalRestricted, true)
-}
-
-func (s *FlatService) GetColumns() int {
-	globalColumns := (*int)(nil)
-	if s.Global != nil {
-		globalColumns = s.Global.Columns
-	}
-	return cascadeInt(nil, s.SectionColumns, globalColumns, DefaultColumns)
-}
-
-func (s *FlatService) GetRemote() RemoteValue {
-	if s.Remote != nil {
-		return s.Remote
-	}
-	if s.SectionRemote != nil {
-		return s.SectionRemote
-	}
-	if s.Global != nil && s.Global.Remote != nil {
-		return s.Global.Remote
-	}
-	return nil
-}
-
-func (s *FlatService) GetTimeoutMs() int {
-	return s.GetTimeout() * 1000
-}
-
-func (s *FlatService) ResolveAllowed(users map[string]*UserConfig) []string {
-	allowed := s.GetAllowed()
-	if len(allowed) == 0 {
-		return nil
-	}
-	result := make(map[string]struct{})
-	for _, name := range allowed {
-		if _, ok := users[name]; ok {
-			result[name] = struct{}{}
-		} else {
-			for uname, u := range users {
-				for _, g := range u.Groups {
-					if g == name {
-						result[uname] = struct{}{}
-					}
-				}
-			}
-		}
-	}
-	sorted := make([]string, 0, len(result))
-	for k := range result {
-		sorted = append(sorted, k)
-	}
-	sort.Strings(sorted)
-	return sorted
-}
-
-func (s *FlatService) IsAccessible(username string, users map[string]*UserConfig) bool {
-	allowed := s.ResolveAllowed(users)
-	return allowed == nil || (username != "" && contains(allowed, username))
-}
-
-const clientTimeoutBuffer = 10000
-
-func (s *FlatService) Serialize(index int, username string, users map[string]*UserConfig) SerializedService {
-	allowedUsers := s.ResolveAllowed(users)
-	isPublic := allowedUsers == nil
-	sectionTitle := s.SectionTitle
-	return SerializedService{
-		ID:                 index,
-		Title:              s.Title,
-		Timeout:            s.GetTimeoutMs() + clientTimeoutBuffer,
-		Confirm:            s.GetConfirm(),
-		Section:            &sectionTitle,
-		SectionCollapsable: s.GetCollapsable(),
-		SectionColumns:     s.GetColumns(),
-		Public:             isPublic,
-		Accessible:         isPublic || (username != "" && contains(allowedUsers, username)),
-		Enabled:            s.GetEnabled(),
-		AllowedUsers:      allowedUsers,
-		Restricted:        s.GetRestricted(),
-	}
-}
-
+// GetGlobal returns the global configuration, or a zero-valued GlobalConfig if none is set.
 func (c *Config) GetGlobal() *GlobalConfig {
 	if c.Global != nil {
 		return c.Global
@@ -367,6 +131,8 @@ func (c *Config) GetGlobal() *GlobalConfig {
 	return &GlobalConfig{}
 }
 
+// GetConfigResponse returns a ConfigResponse with the application title, subtitle,
+// and sorted list of usernames for the frontend.
 func (c *Config) GetConfigResponse() ConfigResponse {
 	g := c.GetGlobal()
 	title := "Estro"
@@ -387,39 +153,4 @@ func (c *Config) GetConfigResponse() ConfigResponse {
 		Subtitle: subtitle,
 		Users:    userNames,
 	}
-}
-
-func cascadeInt(svc, sec, global *int, defaultVal int) int {
-	if svc != nil {
-		return *svc
-	}
-	if sec != nil {
-		return *sec
-	}
-	if global != nil {
-		return *global
-	}
-	return defaultVal
-}
-
-func cascadeBool(svc, sec, global *bool, defaultVal bool) bool {
-	if svc != nil {
-		return *svc
-	}
-	if sec != nil {
-		return *sec
-	}
-	if global != nil {
-		return *global
-	}
-	return defaultVal
-}
-
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }

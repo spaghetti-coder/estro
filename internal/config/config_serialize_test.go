@@ -40,7 +40,7 @@ func TestSerialize_EnabledField(t *testing.T) {
 	svc := FlatService{
 		Title:   "test",
 		Command: CommandValue{"echo"},
-		Global:  &GlobalConfig{Enabled: &glbFalse},
+		Global:  &GlobalConfig{CascadeFields: CascadeFields{Enabled: &glbFalse}},
 	}
 	serialized := svc.Serialize(0, "", nil)
 	if serialized.Enabled {
@@ -53,7 +53,7 @@ func TestSerialize_RestrictedField(t *testing.T) {
 	svc := FlatService{
 		Title:   "test",
 		Command: CommandValue{"echo"},
-		Global:  &GlobalConfig{Restricted: &glbTrue},
+		Global:  &GlobalConfig{CascadeFields: CascadeFields{Restricted: &glbTrue}},
 	}
 	serialized := svc.Serialize(0, "", nil)
 	if !serialized.Restricted {
@@ -64,10 +64,10 @@ func TestSerialize_RestrictedField(t *testing.T) {
 func TestSerialize_RestrictedFalse(t *testing.T) {
 	svcFalse := false
 	svc := FlatService{
-		Title:      "test",
-		Command:    CommandValue{"echo"},
-		Restricted: &svcFalse,
-		Global:     &GlobalConfig{},
+		Title:          "test",
+		Command:        CommandValue{"echo"},
+		ServiceCascade: CascadeFields{Restricted: &svcFalse},
+		Global:         &GlobalConfig{},
 	}
 	serialized := svc.Serialize(0, "", nil)
 	if serialized.Restricted {

@@ -82,8 +82,8 @@ func TestGetEnabled_ServiceOverridesSection(t *testing.T) {
 	svcFalse := false
 	secFalse := false
 	flat := FlatService{
-		Enabled:        &svcFalse,
-		SectionEnabled: &secFalse,
+		ServiceCascade: CascadeFields{Enabled: &svcFalse},
+		SectionCascade: CascadeFields{Enabled: &secFalse},
 		Global:         &GlobalConfig{},
 	}
 	if flat.GetEnabled() {
@@ -95,8 +95,8 @@ func TestGetEnabled_SectionOverridesGlobal(t *testing.T) {
 	secTrue := true
 	glbFalse := false
 	flat := FlatService{
-		SectionEnabled: &secTrue,
-		Global:         &GlobalConfig{Enabled: &glbFalse},
+		SectionCascade: CascadeFields{Enabled: &secTrue},
+		Global:         &GlobalConfig{CascadeFields: CascadeFields{Enabled: &glbFalse}},
 	}
 	if !flat.GetEnabled() {
 		t.Error("expected section enabled=true to override global enabled=false")
@@ -106,7 +106,7 @@ func TestGetEnabled_SectionOverridesGlobal(t *testing.T) {
 func TestGetEnabled_GlobalCascade(t *testing.T) {
 	glbFalse := false
 	flat := FlatService{
-		Global: &GlobalConfig{Enabled: &glbFalse},
+		Global: &GlobalConfig{CascadeFields: CascadeFields{Enabled: &glbFalse}},
 	}
 	if flat.GetEnabled() {
 		t.Error("expected global enabled=false to cascade when no service/section override")
@@ -117,8 +117,8 @@ func TestGetEnabled_ServiceOverridesGlobal(t *testing.T) {
 	svcTrue := true
 	glbFalse := false
 	flat := FlatService{
-		Enabled: &svcTrue,
-		Global:  &GlobalConfig{Enabled: &glbFalse},
+		ServiceCascade: CascadeFields{Enabled: &svcTrue},
+		Global:         &GlobalConfig{CascadeFields: CascadeFields{Enabled: &glbFalse}},
 	}
 	if !flat.GetEnabled() {
 		t.Error("expected service enabled=true to override global enabled=false")
@@ -129,8 +129,8 @@ func TestGetEnabled_ServiceTrueInSectionFalse(t *testing.T) {
 	svcTrue := true
 	secFalse := false
 	flat := FlatService{
-		Enabled:        &svcTrue,
-		SectionEnabled: &secFalse,
+		ServiceCascade: CascadeFields{Enabled: &svcTrue},
+		SectionCascade: CascadeFields{Enabled: &secFalse},
 		Global:         &GlobalConfig{},
 	}
 	if !flat.GetEnabled() {
@@ -144,19 +144,19 @@ func TestFlatten_EnabledCascade(t *testing.T) {
 	secFalse := false
 
 	cfg := &Config{
-		Global: &GlobalConfig{Enabled: &glbFalse},
+		Global: &GlobalConfig{CascadeFields: CascadeFields{Enabled: &glbFalse}},
 		Sections: []SectionConfig{
 			{
-				Title:   "Disabled Section",
-				Enabled: &secFalse,
+				Title:         "Disabled Section",
+				CascadeFields: CascadeFields{Enabled: &secFalse},
 				Services: []ServiceConfig{
 					{Title: "Disabled Service", Command: CommandValue{"echo disabled"}},
-					{Title: "Override Enabled", Command: CommandValue{"echo override"}, Enabled: &svcTrue},
+					{Title: "Override Enabled", Command: CommandValue{"echo override"}, CascadeFields: CascadeFields{Enabled: &svcTrue}},
 				},
 			},
 			{
-				Title:   "Enabled Section",
-				Enabled: &svcTrue,
+				Title:         "Enabled Section",
+				CascadeFields: CascadeFields{Enabled: &svcTrue},
 				Services: []ServiceConfig{
 					{Title: "Normal Service", Command: CommandValue{"echo normal"}},
 				},
@@ -197,9 +197,9 @@ func TestGetRestricted_ServiceOverridesSection(t *testing.T) {
 	svcFalse := false
 	secTrue := true
 	flat := FlatService{
-		Restricted:        &svcFalse,
-		SectionRestricted: &secTrue,
-		Global:            &GlobalConfig{},
+		ServiceCascade: CascadeFields{Restricted: &svcFalse},
+		SectionCascade: CascadeFields{Restricted: &secTrue},
+		Global:         &GlobalConfig{},
 	}
 	if flat.GetRestricted() {
 		t.Error("expected restricted=false when service explicitly sets false")
@@ -210,8 +210,8 @@ func TestGetRestricted_SectionOverridesGlobal(t *testing.T) {
 	secFalse := false
 	glbTrue := true
 	flat := FlatService{
-		SectionRestricted: &secFalse,
-		Global:            &GlobalConfig{Restricted: &glbTrue},
+		SectionCascade: CascadeFields{Restricted: &secFalse},
+		Global:         &GlobalConfig{CascadeFields: CascadeFields{Restricted: &glbTrue}},
 	}
 	if flat.GetRestricted() {
 		t.Error("expected section restricted=false to override global restricted=true")
@@ -221,7 +221,7 @@ func TestGetRestricted_SectionOverridesGlobal(t *testing.T) {
 func TestGetRestricted_GlobalCascade(t *testing.T) {
 	glbTrue := true
 	flat := FlatService{
-		Global: &GlobalConfig{Restricted: &glbTrue},
+		Global: &GlobalConfig{CascadeFields: CascadeFields{Restricted: &glbTrue}},
 	}
 	if !flat.GetRestricted() {
 		t.Error("expected global restricted=true to cascade when no service/section override")
@@ -232,8 +232,8 @@ func TestGetRestricted_ServiceOverridesGlobal(t *testing.T) {
 	svcFalse := false
 	glbTrue := true
 	flat := FlatService{
-		Restricted: &svcFalse,
-		Global:     &GlobalConfig{Restricted: &glbTrue},
+		ServiceCascade: CascadeFields{Restricted: &svcFalse},
+		Global:         &GlobalConfig{CascadeFields: CascadeFields{Restricted: &glbTrue}},
 	}
 	if flat.GetRestricted() {
 		t.Error("expected service restricted=false to override global restricted=true")
@@ -250,16 +250,15 @@ func TestGetRestricted_NilGlobal_DefaultTrue(t *testing.T) {
 func TestFlatten_RestrictedCascade(t *testing.T) {
 	svcFalse := false
 	secTrue := true
-	glbFalse := false
 
 	cfg := &Config{
 		Global: &GlobalConfig{},
 		Sections: []SectionConfig{
 			{
-				Title:      "Sec",
-				Restricted: &secTrue,
+				Title:         "Sec",
+				CascadeFields: CascadeFields{Restricted: &secTrue},
 				Services: []ServiceConfig{
-					{Title: "Override", Command: CommandValue{"echo"}, Restricted: &svcFalse},
+					{Title: "Override", Command: CommandValue{"echo"}, CascadeFields: CascadeFields{Restricted: &svcFalse}},
 					{Title: "Inherit", Command: CommandValue{"date"}},
 				},
 			},
@@ -273,8 +272,9 @@ func TestFlatten_RestrictedCascade(t *testing.T) {
 		t.Error("Inherit: expected restricted=true (inherits from section)")
 	}
 
+	glbFalse := false
 	cfg2 := &Config{
-		Global: &GlobalConfig{Restricted: &glbFalse},
+		Global: &GlobalConfig{CascadeFields: CascadeFields{Restricted: &glbFalse}},
 		Sections: []SectionConfig{
 			{
 				Title: "Sec",

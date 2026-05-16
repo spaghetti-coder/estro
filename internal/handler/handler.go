@@ -1,10 +1,8 @@
+// Package handler provides HTTP request handlers for the Estro web UI.
 package handler
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +18,7 @@ import (
 
 const jobTTL = 10 * time.Minute
 
+// Handler holds shared dependencies for all HTTP route handlers.
 type Handler struct {
 	cfg           *config.Config
 	jobs          *job.Store
@@ -29,6 +28,7 @@ type Handler struct {
 	cmdCtx        context.Context
 }
 
+// NewHandler creates a Handler with the provided dependencies.
 func NewHandler(cfg *config.Config, jobStore *job.Store, sessionStore sessions.Store, sessionSecret []byte, cmdCtx context.Context) *Handler {
 	return &Handler{
 		cfg:           cfg,
@@ -40,6 +40,7 @@ func NewHandler(cfg *config.Config, jobStore *job.Store, sessionStore sessions.S
 	}
 }
 
+// RegisterRoutes registers all HTTP routes on the given Echo instance.
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	loginLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Skipper: middleware.DefaultSkipper,
@@ -114,11 +115,8 @@ func (h *Handler) login(c *echo.Context) error {
 	if body.Username == "" || body.Password == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Username and password required"})
 	}
-	user, ok := h.cfg.Users[body.Username]
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid username or password"})
-	}
-	if err := auth.ComparePassword(user.Password, body.Password); err != nil {
+	_, err := auth.Authenticate(h.cfg.Users, body.Username, body.Password)
+	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid username or password"})
 	}
 	if err := auth.SetSessionUser(h.sessionStore, c.Request(), c.Response(), body.Username, body.RememberMe); err != nil {
@@ -158,7 +156,7 @@ func (h *Handler) runService(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	jobID := generateJobID()
+	jobID := job.GenerateID()
 	h.jobs.Set(jobID, &job.Job{Status: "running", Title: svc.Title})
 
 	if err := c.JSON(http.StatusAccepted, map[string]string{"jobId": jobID}); err != nil {
@@ -166,32 +164,33 @@ func (h *Handler) runService(c *echo.Context) error {
 		return err
 	}
 
-	go func() {
-		timeout := time.Duration(svc.GetTimeout()) * time.Second
-		stdout, stderr, cmdErr := exec.RunCommand(h.cmdCtx, cmd, timeout)
-		if cmdErr != nil {
-			stderrContent := stderr
-			if stderrContent == "" {
-				stderrContent = cmdErr.Error()
-			}
-			h.jobs.Set(jobID, &job.Job{
-				Status: "error",
-				Title:  svc.Title,
-				Stdout: stdout,
-				Stderr: stderrContent,
-			})
-		} else {
-			h.jobs.Set(jobID, &job.Job{
-				Status: "done",
-				Title:  svc.Title,
-				Stdout: stdout,
-				Stderr: stderr,
-			})
-		}
-		h.jobs.ScheduleCleanup(jobID, jobTTL)
-	}()
+	go h.executeAsync(jobID, svc, cmd)
 
 	return nil
+}
+
+func (h *Handler) executeAsync(jobID string, svc config.FlatService, cmd string) {
+	timeout := time.Duration(svc.GetTimeout()) * time.Second
+	stdout, stderr, cmdErr := exec.RunCommand(h.cmdCtx, cmd, timeout)
+	if cmdErr != nil {
+		if stderr == "" {
+			stderr = cmdErr.Error()
+		}
+		h.jobs.Set(jobID, &job.Job{
+			Status: "error",
+			Title:  svc.Title,
+			Stdout: stdout,
+			Stderr: stderr,
+		})
+	} else {
+		h.jobs.Set(jobID, &job.Job{
+			Status: "done",
+			Title:  svc.Title,
+			Stdout: stdout,
+			Stderr: stderr,
+		})
+	}
+	h.jobs.ScheduleCleanup(jobID, jobTTL)
 }
 
 func (h *Handler) getJob(c *echo.Context) error {
@@ -202,33 +201,3 @@ func (h *Handler) getJob(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, j)
 }
-
-func generateJobID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("failed to generate job ID: %v", err))
-	}
-	return hex.EncodeToString(b)
-}
-
-func SessionMiddleware(store sessions.Store) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			c.Set("_session_store", store)
-			return next(c)
-		}
-	}
-}
-
-func GenerateSessionSecret() []byte {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("failed to generate session secret: %v", err))
-	}
-	return b
-}
-
-func NewSessionStore(secret []byte) sessions.Store {
-	return sessions.NewCookieStore(secret)
-}
-
