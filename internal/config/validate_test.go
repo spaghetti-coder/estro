@@ -843,29 +843,126 @@ users:
 }
 
 func TestLoadInvalidConfigPreventsStart(t *testing.T) {
-  content := `unknown_field: oops
+	content := `unknown_field: oops
 global:
   port: 0
   timeout: -1
+  allowed: [nonexistent]
 sections:
   - title: ""
-    services:
-      - command: ""
-        title: ""
+    services: []
 users:
   bob:
     password: ""`
-  path := writeTestConfig(t, content)
-  defer func() { _ = os.Remove(path) }()
+	path := writeTestConfig(t, content)
+	defer func() { _ = os.Remove(path) }()
 
-  _, err := Load(path)
-  if err == nil {
-    t.Fatal("expected error for multiple validation problems, got nil")
-  }
-  msg := err.Error()
-  for _, sub := range []string{"unknown_field", "port", "timeout", "title", "password", "command"} {
-    if !strings.Contains(msg, sub) {
-      t.Errorf("expected error to contain %q, got: %s", sub, msg)
-    }
-  }
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for multiple validation problems, got nil")
+	}
+	msg := err.Error()
+	for _, sub := range []string{"unknown_field", "port", "timeout", "title", "password", "nonexistent", "services"} {
+		if !strings.Contains(msg, sub) {
+			t.Errorf("expected error to contain %q, got: %s", sub, msg)
+		}
+	}
+}
+
+func TestLoadValidConfigWithXFields(t *testing.T) {
+	content := `x-comment: integration test
+global:
+  x-meta: data
+  port: 3000
+sections:
+  - title: T
+    x-info: section note
+    services:
+      - title: S
+        command: echo
+        x-note: service note
+users:
+  alice:
+    password: '$2y$10$hash'
+    x-flag: admin user`
+	path := writeTestConfig(t, content)
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected no error loading config with x-* fields, got: %v", err)
+	}
+	if len(cfg.Sections) != 1 || cfg.Sections[0].Title != "T" {
+		t.Errorf("expected section title 'T', got %v", cfg.Sections)
+	}
+}
+
+func TestLoadConfigWithAllowedEmptyAndNil(t *testing.T) {
+	t.Run("empty_array", func(t *testing.T) {
+		content := `global:
+  port: 3000
+  allowed: []
+sections:
+  - title: T
+    allowed: []
+    services:
+      - title: S
+        command: echo
+        allowed: []`
+		path := writeTestConfig(t, content)
+		defer func() { _ = os.Remove(path) }()
+
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("expected no error for allowed: [], got: %v", err)
+		}
+		if cfg.Global == nil || len(cfg.Global.Allowed) != 0 {
+			t.Error("expected global allowed to be empty slice")
+		}
+	})
+
+	t.Run("nil_allowed", func(t *testing.T) {
+		content := `global:
+  port: 3000
+sections:
+  - title: T
+    services:
+      - title: S
+        command: echo`
+		path := writeTestConfig(t, content)
+		defer func() { _ = os.Remove(path) }()
+
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("expected no error for omitted allowed, got: %v", err)
+		}
+		if cfg.Global == nil || cfg.Global.Allowed != nil {
+			t.Error("expected global allowed to be nil when omitted")
+		}
+	})
+}
+
+func TestLoadConfigWithRemoteEmpty(t *testing.T) {
+	content := `global:
+  port: 3000
+sections:
+  - title: T
+    remote: []
+    services:
+      - title: S
+        command: echo
+        remote: []`
+	path := writeTestConfig(t, content)
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected no error for remote: [], got: %v", err)
+	}
+	if len(cfg.Sections[0].Remote) != 0 {
+		t.Error("expected section remote to be empty slice")
+	}
+	if len(cfg.Sections[0].Services[0].Remote) != 0 {
+		t.Error("expected service remote to be empty slice")
+	}
 }
