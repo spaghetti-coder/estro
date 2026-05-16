@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 const (
@@ -99,7 +99,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Load(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config YAML: %w", err)
 	}
 
