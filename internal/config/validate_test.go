@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -139,15 +141,23 @@ func TestValidateUnknownFieldInUser(t *testing.T) {
 }
 
 func TestValidateXFieldsSilentlyIgnored(t *testing.T) {
-	input := `x-comment: note
+  input := `x-comment: note
 global:
-  x-meta: data`
-	cfg := mustParseConfig(t, input)
-	node := mustParseNode(t, input)
-	errors := ValidateSchema(cfg, node)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for x-* fields, got %+v", errors)
-	}
+  x-meta: data
+  port: 3000
+sections:
+  - title: T
+    services:
+      - title: S
+        command: echo`
+  cfg := mustParseConfig(t, input)
+  node := mustParseNode(t, input)
+  errors := ValidateSchema(cfg, node)
+  for _, e := range errors {
+    if strings.Contains(e.Msg, "unknown field") {
+      t.Errorf("unexpected unknown field error: %v", e)
+    }
+  }
 }
 
 func TestValidateMultipleUnknownFieldsCollected(t *testing.T) {
@@ -222,16 +232,20 @@ func TestFormatAllErrorsNonEmpty(t *testing.T) {
 }
 
 func TestValidateXFieldInSection(t *testing.T) {
-	input := `sections:
+  input := `sections:
   - title: T
-    services: []
+    services:
+      - title: S
+        command: echo
     x-custom: value`
-	cfg := mustParseConfig(t, input)
-	node := mustParseNode(t, input)
-	errors := ValidateSchema(cfg, node)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for x-* fields in section, got %+v", errors)
-	}
+  cfg := mustParseConfig(t, input)
+  node := mustParseNode(t, input)
+  errors := ValidateSchema(cfg, node)
+  for _, e := range errors {
+    if strings.Contains(e.Msg, "unknown field") {
+      t.Errorf("unexpected unknown field error: %v", e)
+    }
+  }
 }
 
 func TestValidateXFieldInService(t *testing.T) {
@@ -250,14 +264,369 @@ func TestValidateXFieldInService(t *testing.T) {
 }
 
 func TestValidateXFieldInUser(t *testing.T) {
-	input := `users:
+  input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: echo
+users:
   alice:
     password: hash
     x-flag: special`
-	cfg := mustParseConfig(t, input)
-	node := mustParseNode(t, input)
-	errors := ValidateSchema(cfg, node)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for x-* fields in user, got %+v", errors)
-	}
+  cfg := mustParseConfig(t, input)
+  node := mustParseNode(t, input)
+  errors := ValidateSchema(cfg, node)
+  for _, e := range errors {
+    if strings.Contains(e.Msg, "unknown field") {
+      t.Errorf("unexpected unknown field error: %v", e)
+    }
+  }
+}
+
+func TestValidateD04HostnameEmpty(t *testing.T) {
+  input := `global:
+  hostname: ""
+  port: 3000`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if e.Path == "global.hostname" && strings.Contains(e.Msg, "non-empty") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected hostname empty error, got %+v", errors)
+  }
+}
+
+func TestValidateD04HostnameNonEmpty(t *testing.T) {
+  input := `global:
+  hostname: localhost
+  port: 3000`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  for _, e := range errors {
+    if e.Path == "global.hostname" {
+      t.Errorf("unexpected hostname error: %v", e)
+    }
+  }
+}
+
+func TestValidateD05PortOutOfRange(t *testing.T) {
+  for _, port := range []int{0, -1, 70000} {
+    t.Run(fmt.Sprintf("port_%d", port), func(t *testing.T) {
+      input := fmt.Sprintf("global:\n  port: %d", port)
+      cfg := mustParseConfig(t, input)
+      errors := ValidateSchema(cfg, nil)
+      found := false
+      for _, e := range errors {
+        if e.Path == "global.port" && strings.Contains(e.Msg, "1 and 65535") {
+          found = true
+          break
+        }
+      }
+      if !found {
+        t.Errorf("expected port range error for port %d, got %+v", port, errors)
+      }
+    })
+  }
+}
+
+func TestValidateD05PortValid(t *testing.T) {
+  for _, port := range []int{1, 80, 443, 3000, 65535} {
+    t.Run(fmt.Sprintf("port_%d", port), func(t *testing.T) {
+      input := fmt.Sprintf("global:\n  port: %d", port)
+      cfg := mustParseConfig(t, input)
+      errors := ValidateSchema(cfg, nil)
+      for _, e := range errors {
+        if e.Path == "global.port" {
+          t.Errorf("unexpected port error for valid port %d: %v", port, e)
+        }
+      }
+    })
+  }
+}
+
+func TestValidateD06ColumnsOutOfRange(t *testing.T) {
+  for _, ctx := range []struct {
+    path string
+    yaml string
+  }{
+    {path: "global.columns", yaml: "global:\n  columns: 0\n  port: 3000"},
+    {path: "global.columns", yaml: "global:\n  columns: 13\n  port: 3000"},
+    {path: "sections[0].columns", yaml: "sections:\n  - title: T\n    columns: 0\n    services:\n      - title: S\n        command: echo"},
+    {path: "sections[0].columns", yaml: "sections:\n  - title: T\n    columns: 15\n    services:\n      - title: S\n        command: echo"},
+  } {
+    t.Run(ctx.path+"_"+ctx.yaml[:20], func(t *testing.T) {
+      cfg := mustParseConfig(t, ctx.yaml)
+      errors := ValidateSchema(cfg, nil)
+      found := false
+      for _, e := range errors {
+        if e.Path == ctx.path && strings.Contains(e.Msg, "1 and 12") {
+          found = true
+          break
+        }
+      }
+      if !found {
+        t.Errorf("expected columns range error for %s, got %+v", ctx.path, errors)
+      }
+    })
+  }
+}
+
+func TestValidateD06ColumnsValid(t *testing.T) {
+  for _, cols := range []int{1, 3, 6, 12} {
+    t.Run(fmt.Sprintf("columns_%d", cols), func(t *testing.T) {
+      input := fmt.Sprintf("global:\n  columns: %d\n  port: 3000", cols)
+      cfg := mustParseConfig(t, input)
+      errors := ValidateSchema(cfg, nil)
+      for _, e := range errors {
+        if e.Path == "global.columns" {
+          t.Errorf("unexpected columns error for valid value %d: %v", cols, e)
+        }
+      }
+    })
+  }
+}
+
+func TestValidateD07TimeoutZero(t *testing.T) {
+  for _, ctx := range []struct {
+    path string
+    yaml string
+  }{
+    {path: "global.timeout", yaml: "global:\n  timeout: 0\n  port: 3000"},
+    {path: "sections[0].timeout", yaml: "sections:\n  - title: T\n    timeout: 0\n    services:\n      - title: S\n        command: echo"},
+    {path: "sections[0].services[0].timeout", yaml: "sections:\n  - title: T\n    services:\n      - title: S\n        command: echo\n        timeout: 0"},
+  } {
+    t.Run(ctx.path, func(t *testing.T) {
+      cfg := mustParseConfig(t, ctx.yaml)
+      errors := ValidateSchema(cfg, nil)
+      found := false
+      for _, e := range errors {
+        if e.Path == ctx.path && strings.Contains(e.Msg, "greater than 0") {
+          found = true
+          break
+        }
+      }
+      if !found {
+        t.Errorf("expected timeout >0 error for %s, got %+v", ctx.path, errors)
+      }
+    })
+  }
+}
+
+func TestValidateD08CommandEmpty(t *testing.T) {
+  input := `sections:
+  - title: T
+    services:
+      - title: S
+        command: ""`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if strings.HasPrefix(e.Path, "sections[0].services[0].command") && strings.Contains(e.Msg, "non-empty") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected command empty error, got %+v", errors)
+  }
+}
+
+func TestValidateD08CommandArrayWithEmpty(t *testing.T) {
+  input := `sections:
+  - title: T
+    services:
+      - title: S
+        command:
+          - "df -h"
+          - ""
+          - "echo done"`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if e.Path == "sections[0].services[0].command[1]" && strings.Contains(e.Msg, "non-empty") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected command[1] empty error, got %+v", errors)
+  }
+}
+
+func TestValidateD09RemoteEmptyString(t *testing.T) {
+  for _, ctx := range []struct {
+    name string
+    path string
+    yaml string
+  }{
+    {name: "global", path: "global.remote", yaml: "global:\n  remote: \"\"\n  port: 3000"},
+    {name: "section", path: "sections[0].remote", yaml: "sections:\n  - title: T\n    remote: \"\"\n    services:\n      - title: S\n        command: echo"},
+    {name: "service", path: "sections[0].services[0].remote", yaml: "sections:\n  - title: T\n    services:\n      - title: S\n        command: echo\n        remote: \"\""},
+  } {
+    t.Run(ctx.name, func(t *testing.T) {
+      cfg := mustParseConfig(t, ctx.yaml)
+      errors := ValidateSchema(cfg, nil)
+      found := false
+      for _, e := range errors {
+        if e.Path == ctx.path+"[0]" && strings.Contains(e.Msg, "non-empty") {
+          found = true
+          break
+        }
+      }
+      if !found {
+        t.Errorf("expected remote empty string error for %s, got %+v", ctx.name, errors)
+      }
+    })
+  }
+}
+
+func TestValidateD09RemoteEmptyArrayValid(t *testing.T) {
+  input := `sections:
+  - title: T
+    remote: []
+    services:
+      - title: S
+        command: echo`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  for _, e := range errors {
+    if strings.Contains(e.Path, "remote") {
+      t.Errorf("remote: [] should be valid, got error: %v", e)
+    }
+  }
+}
+
+func TestValidateD11SectionsEmpty(t *testing.T) {
+  input := `sections: []`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if e.Path == "sections" && strings.Contains(e.Msg, "non-empty") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected sections empty error, got %+v", errors)
+  }
+}
+
+func TestValidateD11SectionMissingTitle(t *testing.T) {
+  input := `sections:
+  - services:
+      - title: S
+        command: echo`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if e.Path == "sections[0].title" && strings.Contains(e.Msg, "required") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected section title required error, got %+v", errors)
+  }
+}
+
+func TestValidateD11SectionEmptyServices(t *testing.T) {
+  input := `sections:
+  - title: T
+    services: []`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if e.Path == "sections[0].services" && strings.Contains(e.Msg, "non-empty") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected section services empty error, got %+v", errors)
+  }
+}
+
+func TestValidateD12UserEmptyPassword(t *testing.T) {
+  input := `users:
+  alice:
+    password: ""`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  found := false
+  for _, e := range errors {
+    if e.Path == "users.alice.password" && strings.Contains(e.Msg, "required") {
+      found = true
+      break
+    }
+  }
+  if !found {
+    t.Errorf("expected user password required error, got %+v", errors)
+  }
+}
+
+func TestValidateD13AllowedEmptyArrayValid(t *testing.T) {
+  input := `global:
+  port: 3000
+  allowed: []`
+  cfg := mustParseConfig(t, input)
+  errors := ValidateSchema(cfg, nil)
+  for _, e := range errors {
+    if strings.Contains(e.Path, "allowed") {
+      t.Errorf("allowed: [] should be valid, got error: %v", e)
+    }
+  }
+}
+
+func TestValidateSchemaCollectsMultipleErrors(t *testing.T) {
+  input := `global:
+  hostname: ""
+  port: 0
+  columns: 20
+  timeout: -5
+sections:
+  - services: []`
+  cfg := mustParseConfig(t, input)
+  node := mustParseNode(t, input)
+  errors := ValidateSchema(cfg, node)
+  if len(errors) < 4 {
+    t.Errorf("expected at least 4 errors, got %d: %+v", len(errors), errors)
+  }
+}
+
+func TestLoadInvalidConfigPreventsStart(t *testing.T) {
+  content := `unknown_field: oops
+global:
+  port: 0
+  timeout: -1
+sections:
+  - title: ""
+    services:
+      - command: ""
+        title: ""
+users:
+  bob:
+    password: ""`
+  path := writeTestConfig(t, content)
+  defer func() { _ = os.Remove(path) }()
+
+  _, err := Load(path)
+  if err == nil {
+    t.Fatal("expected error for multiple validation problems, got nil")
+  }
+  msg := err.Error()
+  for _, sub := range []string{"unknown_field", "port", "timeout", "title", "password", "command"} {
+    if !strings.Contains(msg, sub) {
+      t.Errorf("expected error to contain %q, got: %s", sub, msg)
+    }
+  }
 }

@@ -71,13 +71,141 @@ var userKnownFields = map[string]bool{
 	"groups":   true,
 }
 
-func ValidateSchema(_ *Config, node *yaml.Node) []ValidationError {
-	if node == nil {
-		return nil
-	}
+func ValidateSchema(cfg *Config, node *yaml.Node) []ValidationError {
 	var errors []ValidationError
-	walk(node, "", configKnownFields, &errors)
+	if node != nil {
+		walk(node, "", configKnownFields, &errors)
+	}
+	if cfg != nil {
+		validateValues(cfg, &errors)
+	}
 	return errors
+}
+
+func validateValues(cfg *Config, errors *[]ValidationError) {
+	if cfg.Global != nil {
+		validateGlobalValues(cfg.Global, errors)
+	}
+	validateSectionsValues(cfg, errors)
+	validateUsersValues(cfg, errors)
+}
+
+func validateGlobalValues(g *GlobalConfig, errors *[]ValidationError) {
+	if g.Hostname != nil && *g.Hostname == "" {
+		*errors = append(*errors, ValidationError{
+			Path: "global.hostname",
+			Msg:  "must be a non-empty string",
+		})
+	}
+	if g.Port != nil && (*g.Port < 1 || *g.Port > 65535) {
+		*errors = append(*errors, ValidationError{
+			Path: "global.port",
+			Msg:  "must be between 1 and 65535",
+		})
+	}
+	if g.Columns != nil && (*g.Columns < 1 || *g.Columns > 12) {
+		*errors = append(*errors, ValidationError{
+			Path: "global.columns",
+			Msg:  "must be between 1 and 12",
+		})
+	}
+	if g.Timeout != nil && *g.Timeout <= 0 {
+		*errors = append(*errors, ValidationError{
+			Path: "global.timeout",
+			Msg:  "must be greater than 0",
+		})
+	}
+	validateRemoteEntries(g.Remote, "global.remote", errors)
+}
+
+func validateSectionsValues(cfg *Config, errors *[]ValidationError) {
+	if len(cfg.Sections) == 0 {
+		*errors = append(*errors, ValidationError{
+			Path: "sections",
+			Msg:  "must be a non-empty list",
+		})
+		return
+	}
+	for i, sec := range cfg.Sections {
+		secPath := fmt.Sprintf("sections[%d]", i)
+		if sec.Title == "" {
+			*errors = append(*errors, ValidationError{
+				Path: secPath + ".title",
+				Msg:  "is required",
+			})
+		}
+		if len(sec.Services) == 0 {
+			*errors = append(*errors, ValidationError{
+				Path: secPath + ".services",
+				Msg:  "must be a non-empty list",
+			})
+		}
+		if sec.Columns != nil && (*sec.Columns < 1 || *sec.Columns > 12) {
+			*errors = append(*errors, ValidationError{
+				Path: secPath + ".columns",
+				Msg:  "must be between 1 and 12",
+			})
+		}
+		if sec.Timeout != nil && *sec.Timeout <= 0 {
+			*errors = append(*errors, ValidationError{
+				Path: secPath + ".timeout",
+				Msg:  "must be greater than 0",
+			})
+		}
+		validateRemoteEntries(sec.Remote, secPath+".remote", errors)
+		for j, svc := range sec.Services {
+			svcPath := fmt.Sprintf("%s.services[%d]", secPath, j)
+			if svc.Title == "" {
+				*errors = append(*errors, ValidationError{
+					Path: svcPath + ".title",
+					Msg:  "is required",
+				})
+			}
+			if len(svc.Command) == 0 {
+				*errors = append(*errors, ValidationError{
+					Path: svcPath + ".command",
+					Msg:  "is required",
+				})
+			}
+			for k, cmd := range svc.Command {
+				if cmd == "" {
+					*errors = append(*errors, ValidationError{
+						Path: fmt.Sprintf("%s.command[%d]", svcPath, k),
+						Msg:  "must be a non-empty string",
+					})
+				}
+			}
+			if svc.Timeout != nil && *svc.Timeout <= 0 {
+				*errors = append(*errors, ValidationError{
+					Path: svcPath + ".timeout",
+					Msg:  "must be greater than 0",
+				})
+			}
+			validateRemoteEntries(svc.Remote, svcPath+".remote", errors)
+		}
+	}
+}
+
+func validateRemoteEntries(remote RemoteValue, basePath string, errors *[]ValidationError) {
+	for i, host := range remote {
+		if host == "" {
+			*errors = append(*errors, ValidationError{
+				Path: fmt.Sprintf("%s[%d]", basePath, i),
+				Msg:  "must be a non-empty string",
+			})
+		}
+	}
+}
+
+func validateUsersValues(cfg *Config, errors *[]ValidationError) {
+	for name, user := range cfg.Users {
+		if user.Password == "" {
+			*errors = append(*errors, ValidationError{
+				Path: "users." + name + ".password",
+				Msg:  "is required",
+			})
+		}
+	}
 }
 
 func walk(node *yaml.Node, path string, knownFields map[string]bool, errors *[]ValidationError) {

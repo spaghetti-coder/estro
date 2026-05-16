@@ -176,23 +176,46 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config YAML: %w", err)
 	}
 
+	var allErrors []ValidationError
+
 	if err := validate.Struct(cfg); err != nil {
-		return nil, formatValidationError(err)
+		allErrors = append(allErrors, formatValidationError(err)...)
+	}
+
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, fmt.Errorf("parsing config YAML for schema validation: %w", err)
+	}
+	allErrors = append(allErrors, ValidateSchema(&cfg, &node)...)
+
+	if len(allErrors) > 0 {
+		return nil, formatAllErrors(allErrors)
 	}
 
 	return &cfg, nil
 }
 
-func formatValidationError(err error) error {
+func formatValidationError(err error) []ValidationError {
 	if ve, ok := err.(validator.ValidationErrors); ok {
-		var msgs []string
+		var errs []ValidationError
 		for _, fe := range ve {
 			field := fe.Field()
-			msgs = append(msgs, fmt.Sprintf("field \"%s\": %s", field, fe.Tag()))
+			tag := fe.Tag()
+			msg := tag
+			switch tag {
+			case "required":
+				msg = "is required"
+			case "gt":
+				msg = "must be greater than 0"
+			}
+			errs = append(errs, ValidationError{
+				Path: field,
+				Msg:  msg,
+			})
 		}
-		return fmt.Errorf("config validation failed: %s", strings.Join(msgs, "; "))
+		return errs
 	}
-	return err
+	return []ValidationError{{Path: "", Msg: err.Error()}}
 }
 
 func (c *Config) Flatten() []FlatService {
