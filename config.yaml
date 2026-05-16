@@ -15,7 +15,7 @@ global:
   timeout: 30           # command timeout in seconds (default: 60) 
   confirm: true         # show confirm dialog before running (default: true)
   allowed: []           # user/group who can run; [] = public (default: [])
-  restricted: false     # entities visible to all, interaction gated by allowed (default: true = hidden)
+  restricted: false     # restrict visibility to allowed users only (default: true)
   remote: []            # run on remote host over ssh; [] = local (default: [])
   enabled: true         # enable/disable entity (default: true)
 
