@@ -1,12 +1,12 @@
 ---
 global:
   # ~~~ Server ~~~
-  # Page heading
-  title: Estro
-  subtitle: Config test suite
   # Bind address (default 127.0.0.1:3000)
   hostname: 0.0.0.0
   port: 3000
+  # Page heading
+  title: Estro
+  subtitle: Config test suite
   secret:               # session secret (random per restart if omitted)
   # ~~~ Cascading (most specific wins): global → section ~~~
   collapsable: true     # sections can be collapsed (default: true)
