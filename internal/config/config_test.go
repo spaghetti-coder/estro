@@ -238,6 +238,92 @@ func TestConfigResponse(t *testing.T) {
 	}
 }
 
+func TestAllowedCommaString(t *testing.T) {
+	yaml := `---
+users:
+  admin:
+    password: '$2y$10$hash'
+    groups: [admins]
+  guest:
+    password: '$2y$10$hash2'
+sections:
+  - title: Comma Allowed
+    allowed: 'admins, guest'
+    services:
+      - title: Uptime
+        command: uptime
+      - title: Private
+        command: id
+        allowed: 'admin'
+      - title: Public
+        command: date
+        allowed: ''
+`
+	path := writeTestConfig(t, yaml)
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := cfg.Flatten()
+
+	for _, svc := range services {
+		allowed := svc.GetAllowed()
+		switch svc.Title {
+		case "Uptime":
+			if len(allowed) != 2 || allowed[0] != "admins" || allowed[1] != "guest" {
+				t.Errorf("Uptime: expected [admins guest], got %v", allowed)
+			}
+		case "Private":
+			if len(allowed) != 1 || allowed[0] != "admin" {
+				t.Errorf("Private: expected [admin], got %v", allowed)
+			}
+		case "Public":
+			if len(allowed) != 0 {
+				t.Errorf("Public: expected empty slice for '', got %v", allowed)
+			}
+		}
+	}
+}
+
+func TestUserGroupsStringList(t *testing.T) {
+	yaml := `---
+users:
+  alice:
+    password: '$2y$10$hash1'
+    groups: 'admins, family'
+  bob:
+    password: '$2y$10$hash2'
+    groups: admins
+  guest:
+    password: '$2y$10$hash3'
+    groups: ''
+sections:
+  - title: Test
+    services:
+      - title: Uptime
+        command: uptime
+`
+	path := writeTestConfig(t, yaml)
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.Users["alice"].Groups) != 2 || cfg.Users["alice"].Groups[0] != "admins" || cfg.Users["alice"].Groups[1] != "family" {
+		t.Errorf("alice: expected [admins family], got %v", cfg.Users["alice"].Groups)
+	}
+	if len(cfg.Users["bob"].Groups) != 1 || cfg.Users["bob"].Groups[0] != "admins" {
+		t.Errorf("bob: expected [admins], got %v", cfg.Users["bob"].Groups)
+	}
+	if len(cfg.Users["guest"].Groups) != 0 {
+		t.Errorf("guest: expected empty slice for '', got %v", cfg.Users["guest"].Groups)
+	}
+}
+
 func TestGlobalConfigAddr(t *testing.T) {
 	ptrStr := func(s string) *string { return &s }
 	ptrInt := func(i int) *int { return &i }

@@ -60,8 +60,8 @@ type GlobalConfig struct {
 
 // UserConfig defines a single user's credentials and group memberships.
 type UserConfig struct {
-	Password string   `yaml:"password" validate:"required"`
-	Groups   []string `yaml:"groups,omitempty"`
+	Password string     `yaml:"password" validate:"required"`
+	Groups   StringList `yaml:"groups,omitempty"`
 }
 
 // SectionConfig groups services under a common heading in the UI.

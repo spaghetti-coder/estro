@@ -59,7 +59,7 @@ func TestBuildCmdNoRemote(t *testing.T) {
 
 func TestBuildCmdEmptyRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	result, err := BuildCmd(cmd, config.RemoteValue{})
+	result, err := BuildCmd(cmd, config.StringList{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestBuildCmdEmptyRemote(t *testing.T) {
 
 func TestBuildCmdNilRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	var remote config.RemoteValue
+	var remote config.StringList
 	result, err := BuildCmd(cmd, remote)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -82,7 +82,7 @@ func TestBuildCmdNilRemote(t *testing.T) {
 
 func TestBuildCmdSingleRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	remote := config.RemoteValue{"server1.local"}
+	remote := config.StringList{"server1.local"}
 	result, err := BuildCmd(cmd, remote)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -95,7 +95,7 @@ func TestBuildCmdSingleRemote(t *testing.T) {
 
 func TestBuildCmdMultiHopRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	remote := config.RemoteValue{"server1.local", "server2.local"}
+	remote := config.StringList{"server1.local", "server2.local"}
 	result, err := BuildCmd(cmd, remote)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -120,7 +120,7 @@ func TestBuildCmdArrayCommand(t *testing.T) {
 
 func TestBuildCmdInvalidHost(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	remote := config.RemoteValue{"host with space"}
+	remote := config.StringList{"host with space"}
 	_, err := BuildCmd(cmd, remote)
 	if err == nil {
 		t.Error("expected error for invalid host, got nil")

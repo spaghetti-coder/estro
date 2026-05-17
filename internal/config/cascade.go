@@ -2,28 +2,40 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"go.yaml.in/yaml/v4"
 )
 
-// RemoteValue represents an SSH remote target, which can be a single host string
-// or a multi-hop chain specified as an array of hosts in YAML.
-type RemoteValue []string
+type StringList []string
 
-func (r *RemoteValue) UnmarshalYAML(value *yaml.Node) error {
+func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
 	case yaml.ScalarNode:
-		*r = []string{value.Value}
+		raw := value.Value
+		if raw == "" {
+			*s = []string{}
+			return nil
+		}
+		parts := strings.Split(raw, ",")
+		result := make([]string, 0, len(parts))
+		for _, p := range parts {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		*s = result
 		return nil
 	case yaml.SequenceNode:
-		var hosts []string
-		if err := value.Decode(&hosts); err != nil {
+		var items []string
+		if err := value.Decode(&items); err != nil {
 			return err
 		}
-		*r = hosts
+		*s = items
 		return nil
 	default:
-		return fmt.Errorf("remote must be a string or array of strings")
+		return fmt.Errorf("string list must be a string or array of strings")
 	}
 }
 
@@ -52,8 +64,8 @@ func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 type CascadeFields struct {
 	Timeout    *int        `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
 	Confirm    *bool       `yaml:"confirm,omitempty"`
-	Allowed    []string    `yaml:"allowed,omitempty"`
-	Remote     RemoteValue `yaml:"remote,omitempty"`
+	Allowed    StringList  `yaml:"allowed,omitempty"`
+	Remote     StringList `yaml:"remote,omitempty"`
 	Enabled    *bool       `yaml:"enabled,omitempty"`
 	Restricted *bool       `yaml:"restricted,omitempty"`
 }

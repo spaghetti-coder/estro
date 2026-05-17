@@ -142,7 +142,7 @@ func (s *FlatService) GetColumns() int {
 
 // GetRemote returns the SSH remote chain for the service, cascading through
 // service, section, and global levels. Returns nil for local execution.
-func (s *FlatService) GetRemote() RemoteValue {
+func (s *FlatService) GetRemote() StringList {
 	if s.ServiceCascade.Remote != nil {
 		return s.ServiceCascade.Remote
 	}

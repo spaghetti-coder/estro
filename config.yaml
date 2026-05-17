@@ -1,4 +1,11 @@
 ---
+# ---------------------------------------------------------------------------
+# All lists under `global` and `users` sections support stringlist format. Example:
+#   allowed: 'alice,bob'      # <=> [alice, bob]
+#   remote: ''                # <=> []
+#   groups: [admins, family]  # <=> 'admins, family'
+# ---------------------------------------------------------------------------
+
 global:
   # ~~~ Server ~~~
   # Page heading
@@ -20,9 +27,8 @@ global:
   enabled: true         # enable/disable entity (default: true)
 
 # ---------------------------------------------------------------------------
-# users: bcrypt hashes (cost 10). Groups are optional.
 # Generate password with:
-#   docker run --rm httpd htpasswd -bnBC 10 "" PASS | tr -d ':\n'
+#   docker run --rm httpd htpasswd -bnBC 13 "" PASS | tr -d ':\n'
 # ---------------------------------------------------------------------------
 users:
   alice:                  # Password: changeme1
@@ -30,7 +36,7 @@ users:
     groups: [admins]
   bob:                    # Password: changeme2
     password: '$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
-    groups: [admins, family]
+    groups: 'admins,family'   # <=> [admins, family]
   guest:                  # Password: changeme3
     password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
 
@@ -101,6 +107,7 @@ sections:
       - title: Processes
         command: ps aux | head -20
         confirm: false
+        allowed: 'bob,guest'    # <=> [bob, guest]
       - title: Routes
         command: ip route
         confirm: false
@@ -141,7 +148,7 @@ sections:
     services:
       - title: Two-hop uptime
         command: uptime
-        remote: [localhost, localhost]
+        remote: 'localhost,localhost' # <=> [localhost, localhost]
         confirm: false
       - title: Three-hop date
         command: date

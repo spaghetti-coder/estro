@@ -32,7 +32,7 @@ func ValidateHost(host string) error {
 
 // BuildCmd constructs the final shell command string, wrapping it in nested
 // SSH sessions when a remote chain is specified.
-func BuildCmd(command config.CommandValue, remote config.RemoteValue) (string, error) {
+func BuildCmd(command config.CommandValue, remote config.StringList) (string, error) {
 	cmd := strings.Join(command, " && ")
 	if len(remote) == 0 {
 		return cmd, nil

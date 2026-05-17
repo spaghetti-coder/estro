@@ -367,7 +367,53 @@ sections:
 	}
 }
 
-func TestRemoteValueString(t *testing.T) {
+func TestStringListRemoteComma(t *testing.T) {
+	yaml := `---
+users:
+  admin:
+    password: '$2y$10$hash'
+sections:
+  - title: Comma Remote
+    remote: 'server1.local, server2.local'
+    services:
+      - title: Chain uptime
+        command: uptime
+      - title: Single override
+        command: date
+        remote: otherserver
+      - title: Local override
+        command: hostname
+        remote: ''
+`
+	path := writeTestConfig(t, yaml)
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := cfg.Flatten()
+
+	for _, svc := range services {
+		remote := svc.GetRemote()
+		switch svc.Title {
+		case "Chain uptime":
+			if len(remote) != 2 || remote[0] != "server1.local" || remote[1] != "server2.local" {
+				t.Errorf("Chain uptime: expected [server1.local server2.local], got %v", remote)
+			}
+		case "Single override":
+			if len(remote) != 1 || remote[0] != "otherserver" {
+				t.Errorf("Single override: expected [otherserver], got %v", remote)
+			}
+		case "Local override":
+			if len(remote) != 0 {
+				t.Errorf("Local override: expected empty slice, got %v", remote)
+			}
+		}
+	}
+}
+
+func TestStringListRemote(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
