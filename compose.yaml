@@ -17,7 +17,7 @@ services:
       - PGID=${PGID:-1000}
       # - ESTRO_CONFIG=/app/config.yaml
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/config"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

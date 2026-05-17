@@ -62,6 +62,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 		},
 	})
 
+	e.GET("/healthz", h.healthz)
 	e.GET("/config", h.getConfig)
 	e.GET("/services", h.listServices)
 	e.GET("/me", h.getMe)
@@ -69,6 +70,10 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	e.POST("/logout", h.logout)
 	e.POST("/run/:svc", h.runService)
 	e.GET("/jobs/:id", h.getJob)
+}
+
+func (h *Handler) healthz(c *echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) getConfig(c *echo.Context) error {
