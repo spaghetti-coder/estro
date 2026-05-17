@@ -36,6 +36,16 @@ func Authenticate(users map[string]*config.UserConfig, username, password string
 	return user, nil
 }
 
+// HashPassword generates a bcrypt hash from a plain-text password
+// and returns it with the "bcrypt:" prefix used by ComparePassword.
+func HashPassword(plainPassword string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), 13)
+	if err != nil {
+		return "", fmt.Errorf("generate bcrypt hash: %w", err)
+	}
+	return "bcrypt:" + string(hash), nil
+}
+
 // ComparePassword compares a stored password with a plain-text password.
 // The stored password can be prefixed with "plain:" for plaintext comparison
 // or "bcrypt:" for bcrypt comparison. Unprefixed values are treated as bcrypt

@@ -8,6 +8,7 @@ require (
 	github.com/labstack/echo/v5 v5.1.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
 	golang.org/x/crypto v0.51.0
+	golang.org/x/term v0.43.0
 )
 
 require (

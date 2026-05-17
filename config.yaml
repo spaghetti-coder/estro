@@ -28,7 +28,8 @@ global:
 
 # ---------------------------------------------------------------------------
 # Generate bcrypt password with:
-#   docker run --rm httpd htpasswd -bnBC 13 "" PASS | tr -d ':\n'
+#   docker run --rm ghcr.io/spaghetti-coder/estro:latest estro hash PASSWORD
+#   ./estro hash PASSWORD      # Or using local binary
 # Password formats:
 #   Bare hash (bcrypt):  password: '$2y$10$...'
 #   Explicit bcrypt:     password: 'bcrypt:$2y$10$...'
@@ -36,10 +37,10 @@ global:
 # ---------------------------------------------------------------------------
 users:
   alice:    # Password: changeme1
-    password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
+    password: '$2a$13$uDwcWswNaaJ4gAZaESFhwO0AHvZLTidm9A/EtaU4odlHQKC5lWiCW'
     groups: [admins]
   bob:      # Password: changeme2
-    password: 'bcrypt:$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
+    password: 'bcrypt:$2a$13$jD0bPgj0RLzBo9M.7.cKiOO8934hNJQtvdoukg7Se/BwQzys42uT2'
     groups: 'admins,family'   # <=> [admins, family]
   guest:
     password: 'plain:changeme3'

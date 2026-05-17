@@ -128,6 +128,20 @@ func TestEmbeddedFilesExist(t *testing.T) {
 	}
 }
 
+func TestRunHashWithPassword(t *testing.T) {
+	exitCode := runHash([]string{"testpass"})
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+}
+
+func TestRunHashTooManyArgs(t *testing.T) {
+	exitCode := runHash([]string{"a", "b"})
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1 for too many args, got %d", exitCode)
+	}
+}
+
 func TestRootReturnsIndexHTMLBody(t *testing.T) {
 	e := setupStaticTestServer(t)
 

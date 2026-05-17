@@ -156,6 +156,37 @@ func TestComparePasswordFormats(t *testing.T) {
 	}
 }
 
+func TestHashPassword(t *testing.T) {
+	tests := []struct {
+		name  string
+		plain string
+	}{
+		{name: "simple password", plain: "testpass"},
+		{name: "empty password", plain: ""},
+		{name: "long password", plain: strings.Repeat("a", 72)},
+		{name: "password with special chars", plain: "p@$$w0rd!#"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefixed, err := HashPassword(tt.plain)
+			if err != nil {
+				t.Fatalf("HashPassword(%q) returned error: %v", tt.plain, err)
+			}
+			if !strings.HasPrefix(prefixed, "bcrypt:") {
+				t.Errorf("expected prefix 'bcrypt:', got %q", prefixed)
+			}
+			rawHash := strings.TrimPrefix(prefixed, "bcrypt:")
+			if err := bcrypt.CompareHashAndPassword([]byte(rawHash), []byte(tt.plain)); err != nil {
+				t.Errorf("bcrypt hash does not match plain password %q: %v", tt.plain, err)
+			}
+			if err := ComparePassword(prefixed, tt.plain); err != nil {
+				t.Errorf("ComparePassword(%q, %q) failed: %v", prefixed, tt.plain, err)
+			}
+		})
+	}
+}
+
 func TestDestroySession(t *testing.T) {
 	store := sessions.NewCookieStore([]byte("test-secret"))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

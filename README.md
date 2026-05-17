@@ -65,17 +65,12 @@ Optionally download a fresh binary from GitHub releases.
 
 All configuration lives in a single `config.yaml` file. See demo [`config.yaml`](./config.yaml) for reference.
 
-To generate a user password hash:
-```sh
-docker run --rm httpd htpasswd -bnBC 10 "" YOUR_PASS | tr -d ':\n'; echo
-```
-
 ## Security
 
 **Estro is designed for trusted home networks only. Do not be eejit — don't expose it to the internet.**
 
 - Sessions use `httpOnly`, `sameSite=strict` cookies — not that it makes a scrap of difference if you're daft enough to put this on the open web
-- Passwords are stored as bcrypt hashes (cost 10), so at least they'll be grand if everything else goes sideways
+- Passwords can be stored as bcrypt hashes, so at least they'll be grand if everything else goes sideways
 - Login attempts are rate-limited to 10 per 15 minutes per IP — might slow a determined soul down for a minute or two
 - `StrictHostKeyChecking=no` means SSH connections are vulnerable to MITM on untrusted networks — only use on LANs you control
 
