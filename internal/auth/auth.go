@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo/v5"
@@ -35,13 +36,32 @@ func Authenticate(users map[string]*config.UserConfig, username, password string
 	return user, nil
 }
 
-// ComparePassword compares a bcrypt-hashed password with a plain-text password.
-func ComparePassword(hashedPassword, plainPassword string) error {
-	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
-	if err != nil {
+// ComparePassword compares a stored password with a plain-text password.
+// The stored password can be prefixed with "plain:" for plaintext comparison
+// or "bcrypt:" for bcrypt comparison. Unprefixed values are treated as bcrypt
+// hashes for backward compatibility.
+func ComparePassword(stored, plainPassword string) error {
+	switch {
+	case strings.HasPrefix(stored, "plain:"):
+		if stored[len("plain:"):] == plainPassword {
+			return nil
+		}
 		return errors.New("password does not match")
+	case strings.HasPrefix(stored, "bcrypt:"):
+		if err := bcrypt.CompareHashAndPassword(
+			[]byte(stored[len("bcrypt:"):]), []byte(plainPassword),
+		); err != nil {
+			return errors.New("password does not match")
+		}
+		return nil
+	default:
+		if err := bcrypt.CompareHashAndPassword(
+			[]byte(stored), []byte(plainPassword),
+		); err != nil {
+			return errors.New("password does not match")
+		}
+		return nil
 	}
-	return nil
 }
 
 // GetSessionUser retrieves the authenticated username from the session cookie.

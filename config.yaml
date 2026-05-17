@@ -27,18 +27,22 @@ global:
   enabled: true         # enable/disable entity (default: true)
 
 # ---------------------------------------------------------------------------
-# Generate password with:
+# Generate bcrypt password with:
 #   docker run --rm httpd htpasswd -bnBC 13 "" PASS | tr -d ':\n'
+# Password formats:
+#   Bare hash (bcrypt):  password: '$2y$10$...'
+#   Explicit bcrypt:     password: 'bcrypt:$2y$10$...'
+#   Plaintext:           password: 'plain:mypassword'
 # ---------------------------------------------------------------------------
 users:
-  alice:                  # Password: changeme1
+  alice:    # Password: changeme1
     password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
     groups: [admins]
-  bob:                    # Password: changeme2
-    password: '$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
+  bob:      # Password: changeme2
+    password: 'bcrypt:$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
     groups: 'admins,family'   # <=> [admins, family]
-  guest:                  # Password: changeme3
-    password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
+  guest:
+    password: 'plain:changeme3'
 
 sections:
   # Public (no `allowed`)

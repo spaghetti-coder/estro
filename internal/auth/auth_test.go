@@ -84,6 +84,78 @@ func TestSetSessionUserRememberMe(t *testing.T) {
 	}
 }
 
+func TestComparePasswordFormats(t *testing.T) {
+	bcryptHash, err := bcrypt.GenerateFromPassword([]byte("secretpass"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("failed to generate hash: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		stored  string
+		plain   string
+		wantErr bool
+	}{
+		{
+			name:    "bare bcrypt hash correct password",
+			stored:  string(bcryptHash),
+			plain:   "secretpass",
+			wantErr: false,
+		},
+		{
+			name:    "bare bcrypt hash wrong password",
+			stored:  string(bcryptHash),
+			plain:   "wrongpass",
+			wantErr: true,
+		},
+		{
+			name:    "bcrypt prefix correct password",
+			stored:  "bcrypt:" + string(bcryptHash),
+			plain:   "secretpass",
+			wantErr: false,
+		},
+		{
+			name:    "bcrypt prefix wrong password",
+			stored:  "bcrypt:" + string(bcryptHash),
+			plain:   "wrongpass",
+			wantErr: true,
+		},
+		{
+			name:    "plain prefix correct password",
+			stored:  "plain:secretpass",
+			plain:   "secretpass",
+			wantErr: false,
+		},
+		{
+			name:    "plain prefix wrong password",
+			stored:  "plain:secretpass",
+			plain:   "wrongpass",
+			wantErr: true,
+		},
+		{
+			name:    "plain prefix empty password matches empty",
+			stored:  "plain:",
+			plain:   "",
+			wantErr: false,
+		},
+		{
+			name:    "plain prefix empty password does not match nonempty",
+			stored:  "plain:",
+			plain:   "notempty",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ComparePassword(tt.stored, tt.plain)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ComparePassword(%q, %q) = %v, wantErr %v", tt.stored, tt.plain, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDestroySession(t *testing.T) {
 	store := sessions.NewCookieStore([]byte("test-secret"))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
