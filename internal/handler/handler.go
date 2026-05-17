@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/sessions"
@@ -156,7 +157,8 @@ func (h *Handler) runService(c *echo.Context) error {
 	}
 
 	remote := svc.GetRemote()
-	cmd, err := exec.BuildCmd(svc.Command, remote)
+	sshOpts := strings.Join(svc.GetRemoteSSHOpts(), " ")
+	cmd, err := exec.BuildCmd(svc.Command, remote, sshOpts)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}

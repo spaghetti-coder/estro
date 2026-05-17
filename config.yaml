@@ -24,6 +24,9 @@ global:
   allowed: []           # user/group who can run; [] = public (default: [])
   restricted: false     # restrict visibility to allowed users only (default: true)
   remote: []            # run on remote host over ssh; [] = local (default: [])
+  remote_ssh_opts:      # ssh options for remote command execution (default: [])
+    - -o UserKnownHostsFile=/dev/null
+    - -o StrictHostKeyChecking=no
   enabled: true         # enable/disable entity (default: true)
 
 # ---------------------------------------------------------------------------

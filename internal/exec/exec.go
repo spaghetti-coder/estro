@@ -12,8 +12,6 @@ import (
 	"github.com/spaghetti-coder/estro/internal/config"
 )
 
-const sshOpts = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-
 // ShellEscape wraps a shell command in single quotes, escaping any embedded single quotes.
 func ShellEscape(cmd string) string {
 	return strings.ReplaceAll(cmd, "'", "'\\''")
@@ -31,8 +29,9 @@ func ValidateHost(host string) error {
 }
 
 // BuildCmd constructs the final shell command string, wrapping it in nested
-// SSH sessions when a remote chain is specified.
-func BuildCmd(command config.CommandValue, remote config.StringList) (string, error) {
+// SSH sessions when a remote chain is specified. The sshOpts parameter is
+// the space-separated SSH options string (e.g. "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null").
+func BuildCmd(command config.CommandValue, remote config.StringList, sshOpts string) (string, error) {
 	cmd := strings.Join(command, " && ")
 	if len(remote) == 0 {
 		return cmd, nil
@@ -44,8 +43,12 @@ func BuildCmd(command config.CommandValue, remote config.StringList) (string, er
 		}
 	}
 	result := cmd
+	sshPart := "ssh"
+	if sshOpts != "" {
+		sshPart = "ssh " + sshOpts
+	}
 	for i := len(hosts) - 1; i >= 0; i-- {
-		result = fmt.Sprintf("ssh %s %s '%s'", sshOpts, hosts[i], ShellEscape(result))
+		result = fmt.Sprintf("%s %s '%s'", sshPart, hosts[i], ShellEscape(result))
 	}
 	return result, nil
 }

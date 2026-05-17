@@ -48,7 +48,7 @@ func TestValidateHostRejects(t *testing.T) {
 
 func TestBuildCmdNoRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	result, err := BuildCmd(cmd, nil)
+	result, err := BuildCmd(cmd, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBuildCmdNoRemote(t *testing.T) {
 func TestBuildCmdSingleRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
 	remote := config.StringList{"server1.local"}
-	result, err := BuildCmd(cmd, remote)
+	result, err := BuildCmd(cmd, remote, "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestBuildCmdSingleRemote(t *testing.T) {
 func TestBuildCmdMultiHopRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
 	remote := config.StringList{"server1.local", "server2.local"}
-	result, err := BuildCmd(cmd, remote)
+	result, err := BuildCmd(cmd, remote, "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestBuildCmdMultiHopRemote(t *testing.T) {
 
 func TestBuildCmdArrayCommand(t *testing.T) {
 	cmd := config.CommandValue{"df -h /", "echo ---", "df -h --total | tail -1"}
-	result, err := BuildCmd(cmd, nil)
+	result, err := BuildCmd(cmd, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,9 +98,35 @@ func TestBuildCmdArrayCommand(t *testing.T) {
 func TestBuildCmdInvalidHost(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
 	remote := config.StringList{"host with space"}
-	_, err := BuildCmd(cmd, remote)
+	_, err := BuildCmd(cmd, remote, "-o StrictHostKeyChecking=no")
 	if err == nil {
 		t.Error("expected error for invalid host, got nil")
+	}
+}
+
+func TestBuildCmdNoSSHOpts(t *testing.T) {
+	cmd := config.CommandValue{"uptime"}
+	remote := config.StringList{"server1.local"}
+	result, err := BuildCmd(cmd, remote, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "ssh server1.local 'uptime'"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestBuildCmdCustomSSHOpts(t *testing.T) {
+	cmd := config.CommandValue{"uptime"}
+	remote := config.StringList{"server1.local"}
+	result, err := BuildCmd(cmd, remote, "-o UserKnownHostsFile=/dev/null")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "ssh -o UserKnownHostsFile=/dev/null server1.local 'uptime'"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 

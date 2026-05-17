@@ -269,3 +269,135 @@ func TestStringListRemote(t *testing.T) {
 		}
 	}
 }
+
+func TestCascadeRemoteSSHOpts(t *testing.T) {
+	t.Run("nil means nil (unset)", func(t *testing.T) {
+		svc := FlatService{
+			Title:          "t",
+			Command:        CommandValue{"echo"},
+			ServiceCascade: CascadeFields{},
+			SectionCascade: CascadeFields{},
+			Global:         &GlobalConfig{},
+		}
+		if opts := svc.GetRemoteSSHOpts(); opts != nil {
+			t.Errorf("expected nil, got %v", opts)
+		}
+	})
+
+	t.Run("service overrides section", func(t *testing.T) {
+		svc := FlatService{
+			Title:          "t",
+			Command:        CommandValue{"echo"},
+			ServiceCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "svc_opt"}},
+			SectionCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "sec_opt"}},
+			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+		}
+		opts := svc.GetRemoteSSHOpts()
+		if len(opts) != 2 || opts[0] != "-o" || opts[1] != "svc_opt" {
+			t.Errorf("expected [-o svc_opt], got %v", opts)
+		}
+	})
+
+	t.Run("section overrides global", func(t *testing.T) {
+		svc := FlatService{
+			Title:          "t",
+			Command:        CommandValue{"echo"},
+			ServiceCascade: CascadeFields{},
+			SectionCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "sec_opt"}},
+			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+		}
+		opts := svc.GetRemoteSSHOpts()
+		if len(opts) != 2 || opts[0] != "-o" || opts[1] != "sec_opt" {
+			t.Errorf("expected [-o sec_opt], got %v", opts)
+		}
+	})
+
+	t.Run("falls back to global", func(t *testing.T) {
+		svc := FlatService{
+			Title:          "t",
+			Command:        CommandValue{"echo"},
+			ServiceCascade: CascadeFields{},
+			SectionCascade: CascadeFields{},
+			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+		}
+		opts := svc.GetRemoteSSHOpts()
+		if len(opts) != 2 || opts[0] != "-o" || opts[1] != "glb_opt" {
+			t.Errorf("expected [-o glb_opt], got %v", opts)
+		}
+	})
+
+	t.Run("empty slice is explicit override (no opts)", func(t *testing.T) {
+		svc := FlatService{
+			Title:          "t",
+			Command:        CommandValue{"echo"},
+			ServiceCascade: CascadeFields{RemoteSSHOpts: StringList{}},
+			SectionCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "sec_opt"}},
+			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+		}
+		opts := svc.GetRemoteSSHOpts()
+		if opts == nil {
+			t.Errorf("expected empty slice, got nil")
+		}
+		if len(opts) != 0 {
+			t.Errorf("expected empty slice, got %v", opts)
+		}
+	})
+}
+
+func TestRemoteSSHOptsFromYAML(t *testing.T) {
+	yaml := `---
+global:
+  title: Estro
+  subtitle: SSH opts test
+  hostname: 0.0.0.0
+  port: 3000
+  remote_ssh_opts:
+    - -o StrictHostKeyChecking=no
+    - -o UserKnownHostsFile=/dev/null
+users:
+  admin:
+    password: '$2y$10$hash'
+sections:
+  - title: Section with ssh opts
+    remote_ssh_opts:
+      - -o ConnectTimeout=5
+    services:
+      - title: Inherits section opts
+        command: uptime
+      - title: Overrides with own opts
+        command: date
+        remote_ssh_opts: ['-o', 'CustomOpt=yes']
+  - title: Inherits global opts
+    services:
+      - title: Global opts
+        command: uptime
+`
+	path := writeTestConfig(t, yaml)
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := cfg.Flatten()
+
+	for _, svc := range services {
+		switch svc.Title {
+		case "Inherits section opts":
+			opts := svc.GetRemoteSSHOpts()
+			if len(opts) != 1 || opts[0] != "-o ConnectTimeout=5" {
+				t.Errorf("expected [-o ConnectTimeout=5], got %v", opts)
+			}
+		case "Overrides with own opts":
+			opts := svc.GetRemoteSSHOpts()
+			if len(opts) != 2 || opts[0] != "-o" || opts[1] != "CustomOpt=yes" {
+				t.Errorf("expected [-o CustomOpt=yes], got %v", opts)
+			}
+		case "Global opts":
+			opts := svc.GetRemoteSSHOpts()
+			if len(opts) != 2 {
+				t.Errorf("expected 2 opts, got %v", opts)
+			}
+		}
+	}
+}

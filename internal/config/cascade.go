@@ -62,12 +62,13 @@ func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 
 // CascadeFields holds fields that cascade: global → section → service.
 type CascadeFields struct {
-	Timeout    *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
-	Confirm    *bool      `yaml:"confirm,omitempty"`
-	Allowed    StringList `yaml:"allowed,omitempty"`
-	Remote     StringList `yaml:"remote,omitempty"`
-	Enabled    *bool      `yaml:"enabled,omitempty"`
-	Restricted *bool      `yaml:"restricted,omitempty"`
+	Timeout       *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
+	Confirm       *bool      `yaml:"confirm,omitempty"`
+	Allowed       StringList `yaml:"allowed,omitempty"`
+	Remote        StringList `yaml:"remote,omitempty"`
+	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty"`
+	Enabled       *bool      `yaml:"enabled,omitempty"`
+	Restricted    *bool      `yaml:"restricted,omitempty"`
 }
 
 // LayoutFields holds fields that cascade: global → section (not service-level).

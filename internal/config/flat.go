@@ -155,6 +155,21 @@ func (s *FlatService) GetRemote() StringList {
 	return nil
 }
 
+// GetRemoteSSHOpts returns the SSH options for remote command execution,
+// cascading through service, section, and global levels. Returns nil if unset.
+func (s *FlatService) GetRemoteSSHOpts() StringList {
+	if s.ServiceCascade.RemoteSSHOpts != nil {
+		return s.ServiceCascade.RemoteSSHOpts
+	}
+	if s.SectionCascade.RemoteSSHOpts != nil {
+		return s.SectionCascade.RemoteSSHOpts
+	}
+	if s.Global != nil && s.Global.RemoteSSHOpts != nil {
+		return s.Global.RemoteSSHOpts
+	}
+	return nil
+}
+
 // GetTimeoutMs returns the effective timeout in milliseconds, including a buffer
 // for client-side overhead.
 func (s *FlatService) GetTimeoutMs() int {
