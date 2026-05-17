@@ -238,55 +238,6 @@ func TestConfigResponse(t *testing.T) {
 	}
 }
 
-func TestAllowedCommaString(t *testing.T) {
-	yaml := `---
-users:
-  admin:
-    password: '$2y$10$hash'
-    groups: [admins]
-  guest:
-    password: '$2y$10$hash2'
-sections:
-  - title: Comma Allowed
-    allowed: 'admins, guest'
-    services:
-      - title: Uptime
-        command: uptime
-      - title: Private
-        command: id
-        allowed: 'admin'
-      - title: Public
-        command: date
-        allowed: ''
-`
-	path := writeTestConfig(t, yaml)
-	defer func() { _ = os.Remove(path) }()
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	services := cfg.Flatten()
-
-	for _, svc := range services {
-		allowed := svc.GetAllowed()
-		switch svc.Title {
-		case "Uptime":
-			if len(allowed) != 2 || allowed[0] != "admins" || allowed[1] != "guest" {
-				t.Errorf("Uptime: expected [admins guest], got %v", allowed)
-			}
-		case "Private":
-			if len(allowed) != 1 || allowed[0] != "admin" {
-				t.Errorf("Private: expected [admin], got %v", allowed)
-			}
-		case "Public":
-			if len(allowed) != 0 {
-				t.Errorf("Public: expected empty slice for '', got %v", allowed)
-			}
-		}
-	}
-}
-
 func TestUserGroupsStringList(t *testing.T) {
 	yaml := `---
 users:

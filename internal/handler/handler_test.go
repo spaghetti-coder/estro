@@ -92,13 +92,28 @@ func loadTestConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-func setupTestEnv(t *testing.T) (*echo.Echo, *Handler, *job.Store, sessions.Store) {
+func setupTestEnvWithConfig(t *testing.T, yamlContent string) (*echo.Echo, *Handler, *job.Store, sessions.Store) {
 	t.Helper()
-	cfg := loadTestConfig(t)
+	tmp, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tmp.WriteString(yamlContent); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		t.Fatal(err)
+	}
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	cfg, err := config.Load(tmp.Name())
+	if err != nil {
+		t.Fatalf("failed to load test config: %v", err)
+	}
+
 	store := job.NewStore()
 	sessionSecret := auth.GenerateSessionSecret()
 	sessionStore := auth.NewSessionStore(sessionSecret)
-
 	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
 
 	e := echo.New()
@@ -106,10 +121,14 @@ func setupTestEnv(t *testing.T) (*echo.Echo, *Handler, *job.Store, sessions.Stor
 	e.Use(appMiddleware.FaviconCORS())
 	e.Use(auth.SessionMiddleware(sessionStore))
 	e.Use(echoMiddleware.RequestLogger())
-
 	h.RegisterRoutes(e)
 
 	return e, h, store, sessionStore
+}
+
+func setupTestEnv(t *testing.T) (*echo.Echo, *Handler, *job.Store, sessions.Store) {
+	t.Helper()
+	return setupTestEnvWithConfig(t, testConfigYAML)
 }
 
 func TestGetConfig(t *testing.T) {
@@ -605,42 +624,8 @@ sections:
         command: whoami
 `
 
-func setupRestrictedTestEnv(t *testing.T) (*echo.Echo, *Handler) {
-	t.Helper()
-	tmp, err := os.CreateTemp("", "config-restricted-*.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tmp.WriteString(restrictedTestConfigYAML); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		t.Fatal(err)
-	}
-	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmp.Name()) }()
-
-	cfg, err := config.Load(tmp.Name())
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	store := job.NewStore()
-	sessionSecret := auth.GenerateSessionSecret()
-	sessionStore := auth.NewSessionStore(sessionSecret)
-	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
-
-	e := echo.New()
-	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
-	e.Use(appMiddleware.FaviconCORS())
-	e.Use(auth.SessionMiddleware(sessionStore))
-	e.Use(echoMiddleware.RequestLogger())
-	h.RegisterRoutes(e)
-
-	return e, h
-}
-
 func TestListServices_RestrictedHiddenFromUnauthorized(t *testing.T) {
-	e, _ := setupRestrictedTestEnv(t)
+	e, _, _, _ := setupTestEnvWithConfig(t, restrictedTestConfigYAML)
 
 	req := httptest.NewRequest(http.MethodGet, "/services", nil)
 	rec := httptest.NewRecorder()
@@ -664,7 +649,7 @@ func TestListServices_RestrictedHiddenFromUnauthorized(t *testing.T) {
 }
 
 func TestListServices_RestrictedVisibleForAllowedUser(t *testing.T) {
-	e, _ := setupRestrictedTestEnv(t)
+	e, _, _, _ := setupTestEnvWithConfig(t, restrictedTestConfigYAML)
 
 	cookie := loginAs(t, e, "alice", "changeme1", false)
 
@@ -695,7 +680,7 @@ func TestListServices_RestrictedVisibleForAllowedUser(t *testing.T) {
 }
 
 func TestListServices_RestrictedFalse_VisibleButNotAccessible(t *testing.T) {
-	e, _ := setupRestrictedTestEnv(t)
+	e, _, _, _ := setupTestEnvWithConfig(t, restrictedTestConfigYAML)
 
 	cookie := loginAs(t, e, "guest", "changeme3", false)
 
@@ -730,7 +715,7 @@ func TestListServices_RestrictedFalse_VisibleButNotAccessible(t *testing.T) {
 }
 
 func TestRunService_RestrictedHidden_Returns404(t *testing.T) {
-	e, _ := setupRestrictedTestEnv(t)
+	e, _, _, _ := setupTestEnvWithConfig(t, restrictedTestConfigYAML)
 
 	cookie := loginAs(t, e, "guest", "changeme3", false)
 

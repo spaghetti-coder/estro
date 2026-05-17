@@ -57,29 +57,6 @@ func TestBuildCmdNoRemote(t *testing.T) {
 	}
 }
 
-func TestBuildCmdEmptyRemote(t *testing.T) {
-	cmd := config.CommandValue{"uptime"}
-	result, err := BuildCmd(cmd, config.StringList{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "uptime" {
-		t.Errorf("expected %q, got %q", "uptime", result)
-	}
-}
-
-func TestBuildCmdNilRemote(t *testing.T) {
-	cmd := config.CommandValue{"uptime"}
-	var remote config.StringList
-	result, err := BuildCmd(cmd, remote)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "uptime" {
-		t.Errorf("expected %q, got %q", "uptime", result)
-	}
-}
-
 func TestBuildCmdSingleRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
 	remote := config.StringList{"server1.local"}

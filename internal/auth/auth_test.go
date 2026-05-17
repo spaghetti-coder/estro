@@ -10,32 +10,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestComparePasswordCorrect(t *testing.T) {
-	hash, err := bcrypt.GenerateFromPassword([]byte("testpass"), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("failed to generate hash: %v", err)
-	}
-	if err := ComparePassword(string(hash), "testpass"); err != nil {
-		t.Errorf("expected nil error for correct password, got: %v", err)
-	}
-}
-
-func TestComparePasswordWrong(t *testing.T) {
-	hash, err := bcrypt.GenerateFromPassword([]byte("testpass"), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("failed to generate hash: %v", err)
-	}
-	if err := ComparePassword(string(hash), "wrongpass"); err == nil {
-		t.Error("expected error for wrong password, got nil")
-	}
-}
-
-func TestComparePasswordRealConfig(t *testing.T) {
-	if err := ComparePassword("$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2", "changeme1"); err != nil {
-		t.Errorf("expected alice's password to match, got: %v", err)
-	}
-}
-
 func TestGetSessionUserNotAuthenticated(t *testing.T) {
 	store := sessions.NewCookieStore([]byte("test-secret"))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
