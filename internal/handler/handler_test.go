@@ -112,9 +112,12 @@ func setupTestEnvWithConfig(t *testing.T, yamlContent string) (*echo.Echo, *Hand
 	}
 
 	store := job.NewStore()
-	sessionSecret := auth.GenerateSessionSecret()
+	sessionSecret, err := auth.GenerateSessionSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
-	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
+	h := NewHandler(cfg, store, sessionStore, context.Background())
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
@@ -442,9 +445,12 @@ func TestGetJobCompleted(t *testing.T) {
 	store.Set("test-job", &job.Job{Status: "done", Title: "Test", Stdout: "hello"})
 
 	cfg := loadTestConfig(t)
-	sessionSecret := auth.GenerateSessionSecret()
+	sessionSecret, err := auth.GenerateSessionSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
-	h := NewHandler(cfg, store, sessionStore, sessionSecret, context.Background())
+	h := NewHandler(cfg, store, sessionStore, context.Background())
 
 	e := echo.New()
 	e.GET("/jobs/:id", h.getJob)

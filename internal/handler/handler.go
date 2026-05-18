@@ -17,27 +17,28 @@ import (
 	"github.com/spaghetti-coder/estro/internal/job"
 )
 
-const jobTTL = 10 * time.Minute
+const (
+	jobTTL             = 10 * time.Minute
+	loginRateLimitRate = 0.011111111111111112 // ~1 request per 90s
+)
 
 // Handler holds shared dependencies for all HTTP route handlers.
 type Handler struct {
-	cfg           *config.Config
-	jobs          *job.Store
-	sessionStore  sessions.Store
-	sessionSecret []byte
-	services      []config.FlatService
-	cmdCtx        context.Context
+	cfg          *config.Config
+	jobs         *job.Store
+	sessionStore sessions.Store
+	services     []config.FlatService
+	cmdCtx       context.Context
 }
 
 // NewHandler creates a Handler with the provided dependencies.
-func NewHandler(cfg *config.Config, jobStore *job.Store, sessionStore sessions.Store, sessionSecret []byte, cmdCtx context.Context) *Handler {
+func NewHandler(cfg *config.Config, jobStore *job.Store, sessionStore sessions.Store, cmdCtx context.Context) *Handler {
 	return &Handler{
-		cfg:           cfg,
-		jobs:          jobStore,
-		sessionStore:  sessionStore,
-		sessionSecret: sessionSecret,
-		services:      cfg.Flatten(),
-		cmdCtx:        cmdCtx,
+		cfg:          cfg,
+		jobs:         jobStore,
+		sessionStore: sessionStore,
+		services:     cfg.Flatten(),
+		cmdCtx:       cmdCtx,
 	}
 }
 
@@ -47,7 +48,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 		Skipper: middleware.DefaultSkipper,
 		Store: middleware.NewRateLimiterMemoryStoreWithConfig(
 			middleware.RateLimiterMemoryStoreConfig{
-				Rate:      0.011111111111111112,
+				Rate:      loginRateLimitRate,
 				Burst:     10,
 				ExpiresIn: 15 * time.Minute,
 			},
@@ -163,7 +164,10 @@ func (h *Handler) runService(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	jobID := job.GenerateID()
+	jobID, err := job.GenerateID()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate job ID"})
+	}
 	h.jobs.Set(jobID, &job.Job{Status: "running", Title: svc.Title})
 
 	if err := c.JSON(http.StatusAccepted, map[string]string{"jobId": jobID}); err != nil {

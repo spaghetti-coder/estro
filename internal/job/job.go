@@ -11,12 +11,12 @@ import (
 
 // GenerateID creates a cryptographically random 32-character hex string
 // suitable for use as a job identifier.
-func GenerateID() string {
+func GenerateID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("failed to generate job ID: %v", err))
+		return "", fmt.Errorf("generate job ID: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // Job represents the state and output of an asynchronous command execution.

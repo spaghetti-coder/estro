@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -11,6 +12,20 @@ import (
 	"github.com/go-playground/validator/v10"
 	"go.yaml.in/yaml/v4"
 )
+
+// validate is a package-level singleton validator instance to avoid
+// repeated allocation on every Load() call.
+var validate = func() *validator.Validate {
+	v := validator.New()
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		name := strings.SplitN(fld.Tag.Get("yaml"), ",", 2)[0]
+		if name == "-" || name == "" {
+			return fld.Name
+		}
+		return name
+	})
+	return v
+}()
 
 const (
 	// DefaultTimeout is the default command execution timeout in seconds.
@@ -79,18 +94,6 @@ type ServiceConfig struct {
 	CascadeFields `yaml:",inline"`
 }
 
-func newValidator() *validator.Validate {
-	v := validator.New()
-	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
-		name := strings.SplitN(fld.Tag.Get("yaml"), ",", 2)[0]
-		if name == "-" || name == "" {
-			return fld.Name
-		}
-		return name
-	})
-	return v
-}
-
 // Load reads and validates the YAML configuration file at path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -103,8 +106,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config YAML: %w", err)
 	}
 
-	v := newValidator()
-	if err := v.Struct(cfg); err != nil {
+	if err := validate.Struct(cfg); err != nil {
 		return nil, formatValidationError(err)
 	}
 
@@ -112,11 +114,12 @@ func Load(path string) (*Config, error) {
 }
 
 func formatValidationError(err error) error {
-	if ve, ok := err.(validator.ValidationErrors); ok {
+	var ve validator.ValidationErrors
+	if errors.As(err, &ve) {
 		var msgs []string
 		for _, fe := range ve {
 			field := fe.Field()
-			msgs = append(msgs, fmt.Sprintf("field \"%s\": %s", field, fe.Tag()))
+			msgs = append(msgs, fmt.Sprintf("field %q: %s", field, fe.Tag()))
 		}
 		return fmt.Errorf("config validation failed: %s", strings.Join(msgs, "; "))
 	}

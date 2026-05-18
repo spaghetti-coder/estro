@@ -1,3 +1,4 @@
+// Package middleware provides HTTP middleware for security, CORS, and static file handling.
 package middleware
 
 import (

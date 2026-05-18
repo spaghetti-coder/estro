@@ -48,14 +48,18 @@ func main() {
 
 	cmdCtx, cmdCancel := context.WithCancel(context.Background())
 
-	sessionSecret := auth.GenerateSessionSecret()
+	sessionSecret, err := auth.GenerateSessionSecret()
+	if err != nil {
+		slog.Error("failed to generate session secret", "error", err)
+		os.Exit(1)
+	}
 	globalCfg := cfg.GetGlobal()
 	if globalCfg.Secret != nil {
 		sessionSecret = []byte(*globalCfg.Secret)
 	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
 
-	h := handler.NewHandler(cfg, jobStore, sessionStore, sessionSecret, cmdCtx)
+	h := handler.NewHandler(cfg, jobStore, sessionStore, cmdCtx)
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))

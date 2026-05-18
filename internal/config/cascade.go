@@ -7,6 +7,9 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
+// StringList is a YAML-aware string list type that deserializes from either
+// a comma-separated scalar (e.g., "alice,bob") or a YAML sequence (e.g., [alice, bob]).
+// When used in ACL contexts, nil means public access, while an empty slice also means public.
 type StringList []string
 
 func (s *StringList) UnmarshalYAML(value *yaml.Node) error {

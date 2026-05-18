@@ -106,12 +106,12 @@ func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter
 
 // GenerateSessionSecret creates a cryptographically random 32-byte secret
 // suitable for use as a session cookie signing key.
-func GenerateSessionSecret() []byte {
+func GenerateSessionSecret() ([]byte, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("failed to generate session secret: %v", err))
+		return nil, fmt.Errorf("generate session secret: %w", err)
 	}
-	return b
+	return b, nil
 }
 
 // NewSessionStore creates a new cookie-based session store signed with

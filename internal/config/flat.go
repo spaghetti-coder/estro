@@ -37,7 +37,10 @@ type ConfigResponse struct {
 	Users    []string `json:"users"`
 }
 
-const clientTimeoutBuffer = 10000
+// clientTimeoutBuffer is the buffer (10s) added to the server-side timeout
+// to account for client-side overhead (network latency, UI rendering, polling delay).
+// This ensures the client doesn't timeout before the server completes.
+const clientTimeoutBuffer = 10000 // 10s buffer added to server-side timeout for client waits
 
 // Flatten expands all sections and services into a flat slice with cascade
 // fallbacks wired up for each service.
