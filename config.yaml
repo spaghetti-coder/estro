@@ -81,6 +81,13 @@ sections:
       - title: Load
         command: cat /proc/loadavg
         confirm: false
+      - title: Timeout failure
+        command: sleep 5; echo 123
+        timeout: 2
+        confirm: false
+      - title: Invalid command
+        command: jiqopwuioadzxcv
+        confirm: false
 
   - title: Logs
     timeout: 15                 # all services in this section default to 15s

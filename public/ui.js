@@ -15,6 +15,21 @@
     return Object.assign(document.createElement(tag), props);
   }
 
+  const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c => ESCAPE_MAP[c]);
+  }
+
+  function formatLabel(section, title) {
+    return section ? `${section}: ${title}` : title;
+  }
+
+  function formatLabelHTML(section, title, status, statusClass, suffix) {
+    const prefix = section ? `${escapeHTML(section)}: ${escapeHTML(title)}` : escapeHTML(title);
+    const span = `<span class="toast-status toast-status--${statusClass}">${escapeHTML(status)}</span>`;
+    return suffix ? `${prefix} ${span}: ${escapeHTML(suffix)}` : `${prefix} ${span}`;
+  }
+
   let body, checkbox, knob;
   let toastsEl, toastTpl;
   let modal, modalPanel, modalTitle;
@@ -75,12 +90,15 @@
     });
   }
 
-  function showToast(message, type = 'info', { jobId } = {}) {
+  function showToast(message, type = 'info', { jobId, html } = {}) {
     const t = toastTpl.cloneNode(true).firstElementChild;
     if (type === 'success' || type === 'error') t.classList.add(type);
     t.querySelector('.toast-icon').textContent = TOAST_ICONS[type] || TOAST_ICONS.info;
-    const truncated = message.length > TOAST_MAX_CHARS ? message.slice(0, TOAST_MAX_CHARS) + '…' : message;
-    t.querySelector('.toast-message').textContent = truncated;
+    const msgEl = t.querySelector('.toast-message');
+    if (html) { msgEl.innerHTML = message; } else {
+      const truncated = message.length > TOAST_MAX_CHARS ? message.slice(0, TOAST_MAX_CHARS) + '…' : message;
+      msgEl.textContent = truncated;
+    }
     const logsBtn = t.querySelector('.toast-logs-btn');
     if (jobId) {
       logsBtn.addEventListener('click', () => openLogsModal(jobId));
@@ -249,7 +267,7 @@
       const pollRes = await fetch(`/jobs/${jobId}`);
       if (!pollRes.ok) throw new Error('Job lost');
       const job = await pollRes.json();
-      if (job.status === 'done') return { message: `${job.title} done`, jobId };
+      if (job.status === 'done') return { jobId };
       if (job.status === 'error') throw Object.assign(new Error('Command failed'), { jobId });
     }
     throw Object.assign(new Error('Request timed out'), { jobId });
@@ -279,20 +297,20 @@
     setTimeout(() => ripple.remove(), RIPPLE_DURATION_MS);
   }
 
-  async function handleRun(btn, svc, title, timeout, confirm) {
+  async function handleRun(btn, svc, section, title, timeout, confirm) {
     if (pending.has(svc)) return;
     if (confirm) {
-      const ok = await showConfirm(title);
-      if (!ok) { showToast('Cancelled', 'info'); return; }
+      const ok = await showConfirm(formatLabel(section, title));
+      if (!ok) { showToast(formatLabelHTML(section, title, 'Cancelled', 'muted'), 'info', { html: true }); return; }
     }
 
     pending.set(svc, true);
     setButtonPending(btn, true);
     try {
-      const { message, jobId } = await runService(svc, timeout);
-      showToast(message, 'success', { jobId });
+      const { jobId } = await runService(svc, timeout);
+      showToast(formatLabelHTML(section, title, 'done', 'success'), 'success', { jobId, html: true });
     } catch (err) {
-      showToast(err.message || 'Request failed', 'error', { jobId: err.jobId });
+      showToast(formatLabelHTML(section, title, 'failed', 'error', err.message === 'Command failed' ? '' : err.message), 'error', { jobId: err.jobId, html: true });
     } finally {
       pending.delete(svc);
       setButtonPending(btn, false);
@@ -388,7 +406,7 @@
       btn.classList.add('service-disabled');
       btn.disabled = true;
     } else if (isPub || accessible) {
-      btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, title, timeout, confirm); });
+      btn.addEventListener('click', (e) => { createRipple(e, btn); handleRun(btn, id, svc.section, title, timeout, confirm); });
     } else {
       applyButtonAccessState(btn, svc);
     }

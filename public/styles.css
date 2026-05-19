@@ -270,6 +270,10 @@ body{
 .toast-message{ flex:1; padding-right:4px; }
 .toast.success{ border-left:4px solid var(--success) }
 .toast.error{ border-left:4px solid var(--error) }
+.toast-status{ font-weight:600 }
+.toast-status--success{ color:var(--success) }
+.toast-status--error{ color:var(--error) }
+.toast-status--muted{ color:var(--muted) }
 .toast-close-btn,.toast-logs-btn{
   position:absolute; top:-14px;
   background:#0f1724; border:1px solid rgba(255,255,255,0.14);
