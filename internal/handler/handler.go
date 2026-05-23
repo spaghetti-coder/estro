@@ -122,8 +122,7 @@ func (h *Handler) login(c *echo.Context) error {
 	if body.Username == "" || body.Password == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Username and password required"})
 	}
-	_, err := auth.Authenticate(h.cfg.Users, body.Username, body.Password)
-	if err != nil {
+	if auth.Authenticate(h.cfg.Users, body.Username, body.Password) == nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid username or password"})
 	}
 	if err := auth.SetSessionUser(h.sessionStore, c.Request(), c.Response(), body.Username, body.RememberMe); err != nil {

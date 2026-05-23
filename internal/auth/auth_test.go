@@ -65,66 +65,66 @@ func TestComparePasswordFormats(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		stored  string
-		plain   string
-		wantErr bool
+		name   string
+		stored string
+		plain  string
+		want   bool
 	}{
 		{
-			name:    "bare bcrypt hash correct password",
-			stored:  string(bcryptHash),
-			plain:   "secretpass",
-			wantErr: false,
+			name:   "bare bcrypt hash correct password",
+			stored: string(bcryptHash),
+			plain:  "secretpass",
+			want:   true,
 		},
 		{
-			name:    "bare bcrypt hash wrong password",
-			stored:  string(bcryptHash),
-			plain:   "wrongpass",
-			wantErr: true,
+			name:   "bare bcrypt hash wrong password",
+			stored: string(bcryptHash),
+			plain:  "wrongpass",
+			want:   false,
 		},
 		{
-			name:    "bcrypt prefix correct password",
-			stored:  "bcrypt:" + string(bcryptHash),
-			plain:   "secretpass",
-			wantErr: false,
+			name:   "bcrypt prefix correct password",
+			stored: "bcrypt:" + string(bcryptHash),
+			plain:  "secretpass",
+			want:   true,
 		},
 		{
-			name:    "bcrypt prefix wrong password",
-			stored:  "bcrypt:" + string(bcryptHash),
-			plain:   "wrongpass",
-			wantErr: true,
+			name:   "bcrypt prefix wrong password",
+			stored: "bcrypt:" + string(bcryptHash),
+			plain:  "wrongpass",
+			want:   false,
 		},
 		{
-			name:    "plain prefix correct password",
-			stored:  "plain:secretpass",
-			plain:   "secretpass",
-			wantErr: false,
+			name:   "plain prefix correct password",
+			stored: "plain:secretpass",
+			plain:  "secretpass",
+			want:   true,
 		},
 		{
-			name:    "plain prefix wrong password",
-			stored:  "plain:secretpass",
-			plain:   "wrongpass",
-			wantErr: true,
+			name:   "plain prefix wrong password",
+			stored: "plain:secretpass",
+			plain:  "wrongpass",
+			want:   false,
 		},
 		{
-			name:    "plain prefix empty password matches empty",
-			stored:  "plain:",
-			plain:   "",
-			wantErr: false,
+			name:   "plain prefix empty password matches empty",
+			stored: "plain:",
+			plain:  "",
+			want:   true,
 		},
 		{
-			name:    "plain prefix empty password does not match nonempty",
-			stored:  "plain:",
-			plain:   "notempty",
-			wantErr: true,
+			name:   "plain prefix empty password does not match nonempty",
+			stored: "plain:",
+			plain:  "notempty",
+			want:   false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ComparePassword(tt.stored, tt.plain)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ComparePassword(%q, %q) = %v, wantErr %v", tt.stored, tt.plain, err, tt.wantErr)
+			got := ComparePassword(tt.stored, tt.plain)
+			if got != tt.want {
+				t.Errorf("ComparePassword(%q, %q) = %v, want %v", tt.stored, tt.plain, got, tt.want)
 			}
 		})
 	}
@@ -154,8 +154,8 @@ func TestHashPassword(t *testing.T) {
 			if err := bcrypt.CompareHashAndPassword([]byte(rawHash), []byte(tt.plain)); err != nil {
 				t.Errorf("bcrypt hash does not match plain password %q: %v", tt.plain, err)
 			}
-			if err := ComparePassword(prefixed, tt.plain); err != nil {
-				t.Errorf("ComparePassword(%q, %q) failed: %v", prefixed, tt.plain, err)
+			if !ComparePassword(prefixed, tt.plain) {
+				t.Errorf("ComparePassword(%q, %q) = false, want true", prefixed, tt.plain)
 			}
 		})
 	}

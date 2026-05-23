@@ -3,7 +3,6 @@ package auth
 
 import (
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,21 +18,17 @@ const SessionCookieName = "connect.sid"
 
 const rememberMeMaxAge = 30 * 24 * 3600
 
-// ErrInvalidCredentials is returned when authentication fails due to
-// incorrect username or password.
-var ErrInvalidCredentials = errors.New("invalid credentials")
-
 // Authenticate verifies a username/password combination against the
-// provided user map. Returns ErrInvalidCredentials on failure.
-func Authenticate(users map[string]*config.UserConfig, username, password string) (*config.UserConfig, error) {
+// provided user map. Returns nil on failure.
+func Authenticate(users map[string]*config.UserConfig, username, password string) *config.UserConfig {
 	user, ok := users[username]
 	if !ok {
-		return nil, ErrInvalidCredentials
+		return nil
 	}
-	if err := ComparePassword(user.Password, password); err != nil {
-		return nil, ErrInvalidCredentials
+	if !ComparePassword(user.Password, password) {
+		return nil
 	}
-	return user, nil
+	return user
 }
 
 // HashPassword generates a bcrypt hash from a plain-text password
@@ -50,28 +45,12 @@ func HashPassword(plainPassword string) (string, error) {
 // The stored password can be prefixed with "plain:" for plaintext comparison
 // or "bcrypt:" for bcrypt comparison. Unprefixed values are treated as bcrypt
 // hashes for backward compatibility.
-func ComparePassword(stored, plainPassword string) error {
-	switch {
-	case strings.HasPrefix(stored, "plain:"):
-		if stored[len("plain:"):] == plainPassword {
-			return nil
-		}
-		return errors.New("password does not match")
-	case strings.HasPrefix(stored, "bcrypt:"):
-		if err := bcrypt.CompareHashAndPassword(
-			[]byte(stored[len("bcrypt:"):]), []byte(plainPassword),
-		); err != nil {
-			return errors.New("password does not match")
-		}
-		return nil
-	default:
-		if err := bcrypt.CompareHashAndPassword(
-			[]byte(stored), []byte(plainPassword),
-		); err != nil {
-			return errors.New("password does not match")
-		}
-		return nil
+func ComparePassword(stored, plainPassword string) bool {
+	if strings.HasPrefix(stored, "plain:") {
+		return stored[len("plain:"):] == plainPassword
 	}
+	hash := strings.TrimPrefix(stored, "bcrypt:")
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plainPassword)) == nil
 }
 
 // GetSessionUser retrieves the authenticated username from the session cookie.
