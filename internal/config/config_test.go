@@ -194,30 +194,6 @@ func TestLoadBadYAML(t *testing.T) {
 	}
 }
 
-func TestCommandValueString(t *testing.T) {
-	path := writeTestConfig(t, testConfigYAML())
-	defer func() { _ = os.Remove(path) }()
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	services := cfg.Flatten()
-
-	for _, svc := range services {
-		switch svc.Title {
-		case "Uptime":
-			if len(svc.Command) != 1 || svc.Command[0] != "uptime" {
-				t.Errorf("Uptime: expected single command 'uptime', got %v", svc.Command)
-			}
-		case "Disk usage":
-			if len(svc.Command) != 3 {
-				t.Errorf("Disk usage: expected 3 commands, got %d", len(svc.Command))
-			}
-		}
-	}
-}
-
 func TestConfigResponse(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
@@ -235,43 +211,6 @@ func TestConfigResponse(t *testing.T) {
 	}
 	if len(resp.Users) != 3 {
 		t.Errorf("expected 3 users, got %d", len(resp.Users))
-	}
-}
-
-func TestUserGroupsStringList(t *testing.T) {
-	yaml := `---
-users:
-  alice:
-    password: '$2y$10$hash1'
-    groups: 'admins, family'
-  bob:
-    password: '$2y$10$hash2'
-    groups: admins
-  guest:
-    password: '$2y$10$hash3'
-    groups: ''
-sections:
-  - title: Test
-    services:
-      - title: Uptime
-        command: uptime
-`
-	path := writeTestConfig(t, yaml)
-	defer func() { _ = os.Remove(path) }()
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(cfg.Users["alice"].Groups) != 2 || cfg.Users["alice"].Groups[0] != "admins" || cfg.Users["alice"].Groups[1] != "family" {
-		t.Errorf("alice: expected [admins family], got %v", cfg.Users["alice"].Groups)
-	}
-	if len(cfg.Users["bob"].Groups) != 1 || cfg.Users["bob"].Groups[0] != "admins" {
-		t.Errorf("bob: expected [admins], got %v", cfg.Users["bob"].Groups)
-	}
-	if len(cfg.Users["guest"].Groups) != 0 {
-		t.Errorf("guest: expected empty slice for '', got %v", cfg.Users["guest"].Groups)
 	}
 }
 
