@@ -105,3 +105,16 @@ func cascadeBool(svc, sec, global *bool, defaultVal bool) bool {
 	}
 	return defaultVal
 }
+
+func cascadeStringList(svc, sec, global StringList) StringList {
+	if svc != nil {
+		return svc
+	}
+	if sec != nil {
+		return sec
+	}
+	if global != nil {
+		return global
+	}
+	return nil
+}

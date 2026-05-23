@@ -8,7 +8,7 @@ import (
 // ResolveAllowed expands the service's allowed list into concrete usernames,
 // resolving group names into their member users. Returns nil for public access.
 func (s *FlatService) ResolveAllowed(users map[string]*UserConfig) []string {
-	allowed := s.GetAllowed()
+	allowed := s.Allowed
 	if len(allowed) == 0 {
 		return nil
 	}

@@ -9,7 +9,7 @@ func TestResolveAllowedNil(t *testing.T) {
 	users := map[string]*UserConfig{
 		"alice": {Password: "hash", Groups: []string{"admins"}},
 	}
-	svc := FlatService{ServiceCascade: CascadeFields{Allowed: nil}}
+	svc := FlatService{Allowed: nil}
 	result := svc.ResolveAllowed(users)
 	if result != nil {
 		t.Errorf("expected nil for Allowed=nil, got %v", result)
@@ -20,7 +20,7 @@ func TestResolveAllowedEmptySlice(t *testing.T) {
 	users := map[string]*UserConfig{
 		"alice": {Password: "hash", Groups: []string{"admins"}},
 	}
-	svc := FlatService{ServiceCascade: CascadeFields{Allowed: []string{}}}
+	svc := FlatService{Allowed: []string{}}
 	result := svc.ResolveAllowed(users)
 	if result != nil {
 		t.Errorf("expected nil for empty Allowed, got %v", result)
@@ -32,7 +32,7 @@ func TestResolveAllowedGroup(t *testing.T) {
 		"alice": {Password: "hash", Groups: []string{"admins"}},
 		"bob":   {Password: "hash", Groups: []string{"admins", "family"}},
 	}
-	svc := FlatService{ServiceCascade: CascadeFields{Allowed: []string{"admins"}}}
+	svc := FlatService{Allowed: []string{"admins"}}
 	result := svc.ResolveAllowed(users)
 	if len(result) != 2 {
 		t.Errorf("expected 2 users for 'admins' group, got %d: %v", len(result), result)
@@ -46,7 +46,7 @@ func TestResolveAllowedSingleUser(t *testing.T) {
 	users := map[string]*UserConfig{
 		"guest": {Password: "hash"},
 	}
-	svc := FlatService{ServiceCascade: CascadeFields{Allowed: []string{"guest"}}}
+	svc := FlatService{Allowed: []string{"guest"}}
 	result := svc.ResolveAllowed(users)
 	if len(result) != 1 || result[0] != "guest" {
 		t.Errorf("expected [guest], got %v", result)
@@ -60,7 +60,7 @@ func TestIsAccessible(t *testing.T) {
 		"guest": {Password: "hash"},
 	}
 
-	publicSvc := FlatService{ServiceCascade: CascadeFields{Allowed: nil}}
+	publicSvc := FlatService{Allowed: nil}
 	if !publicSvc.IsAccessible("", users) {
 		t.Error("public service should be accessible with no user")
 	}
@@ -68,7 +68,7 @@ func TestIsAccessible(t *testing.T) {
 		t.Error("public service should be accessible with any user")
 	}
 
-	restrictedSvc := FlatService{ServiceCascade: CascadeFields{Allowed: []string{"admins"}}}
+	restrictedSvc := FlatService{Allowed: []string{"admins"}}
 	if restrictedSvc.IsAccessible("", users) {
 		t.Error("restricted service should not be accessible with empty user")
 	}
@@ -79,22 +79,21 @@ func TestIsAccessible(t *testing.T) {
 		t.Error("restricted service should not be accessible to guest")
 	}
 
-	emptyAllowed := FlatService{ServiceCascade: CascadeFields{Allowed: []string{}}}
+	emptyAllowed := FlatService{Allowed: []string{}}
 	if !emptyAllowed.IsAccessible("", users) {
 		t.Error("empty allowed should be accessible (public)")
 	}
 }
 
 func TestRestrictedTrue_EmptyAllowedIsPublic(t *testing.T) {
-	glbTrue := true
 	flat := FlatService{
-		Global:         &GlobalConfig{CascadeFields: CascadeFields{Restricted: &glbTrue}},
-		ServiceCascade: CascadeFields{Allowed: []string{}},
+		Restricted: true,
+		Allowed:    []string{},
 	}
 	users := map[string]*UserConfig{
 		"alice": {Password: "hash"},
 	}
-	if flat.GetRestricted() {
+	if flat.Restricted {
 		if !flat.IsAccessible("guest", users) {
 			t.Error("restricted=true + allowed=[] should be public")
 		}
@@ -102,9 +101,7 @@ func TestRestrictedTrue_EmptyAllowedIsPublic(t *testing.T) {
 }
 
 func TestRestrictedTrue_NilAllowedIsPublic(t *testing.T) {
-	flat := FlatService{
-		Global: &GlobalConfig{},
-	}
+	flat := FlatService{}
 	users := map[string]*UserConfig{
 		"alice": {Password: "hash"},
 	}

@@ -3,15 +3,25 @@ package config
 import "slices"
 
 // FlatService holds a service with its section and global fallbacks resolved
-// into a single flat struct for cascade lookups.
+// into a single flat struct. All cascading fields are pre-resolved in Flatten().
 type FlatService struct {
-	Title          string
-	Command        CommandValue
-	ServiceCascade CascadeFields
-	SectionCascade CascadeFields
-	SectionLayout  LayoutFields
-	SectionTitle   string
-	Global         *GlobalConfig
+	Title   string
+	Command CommandValue
+
+	// resolved cascading fields
+	Timeout       int
+	Confirm       bool
+	Enabled       bool
+	Restricted    bool
+	Allowed       StringList // nil = public
+	Remote        StringList // nil = inherit/cascade, [] = explicit local
+	RemoteSSHOpts StringList // nil = unset
+
+	// resolved layout
+	SectionCollapsable bool
+	SectionColumns     int
+
+	SectionTitle string
 }
 
 // SerializedService is the JSON-ready representation of a service sent to the frontend.
@@ -43,140 +53,36 @@ type ConfigResponse struct {
 const clientTimeoutBuffer = 10000 // 10s buffer added to server-side timeout for client waits
 
 // Flatten expands all sections and services into a flat slice with cascade
-// fallbacks wired up for each service.
+// fallbacks resolved inline for each service.
 func (c *Config) Flatten() []FlatService {
 	total := 0
 	for _, section := range c.Sections {
 		total += len(section.Services)
 	}
 	services := make([]FlatService, 0, total)
-	globalRef := c.GetGlobal()
+	global := c.GetGlobal().CascadeFields
+	globalLayout := c.GetGlobal().LayoutFields
 	for _, section := range c.Sections {
+		sec := section.CascadeFields
+		lay := section.LayoutFields
 		for _, svc := range section.Services {
-			flat := FlatService{
-				Title:          svc.Title,
-				Command:        svc.Command,
-				ServiceCascade: svc.CascadeFields,
-				SectionCascade: section.CascadeFields,
-				SectionLayout:  section.LayoutFields,
-				SectionTitle:   section.Title,
-				Global:         globalRef,
-			}
-			services = append(services, flat)
+			services = append(services, FlatService{
+				Title:              svc.Title,
+				Command:            svc.Command,
+				Timeout:            cascadeInt(svc.Timeout, sec.Timeout, global.Timeout, DefaultTimeout),
+				Confirm:            cascadeBool(svc.Confirm, sec.Confirm, global.Confirm, DefaultConfirm),
+				Enabled:            cascadeBool(svc.Enabled, sec.Enabled, global.Enabled, true),
+				Restricted:         cascadeBool(svc.Restricted, sec.Restricted, global.Restricted, true),
+				Allowed:            cascadeStringList(svc.Allowed, sec.Allowed, global.Allowed),
+				Remote:             cascadeStringList(svc.Remote, sec.Remote, global.Remote),
+				RemoteSSHOpts:      cascadeStringList(svc.RemoteSSHOpts, sec.RemoteSSHOpts, global.RemoteSSHOpts),
+				SectionCollapsable: cascadeBool(nil, lay.Collapsable, globalLayout.Collapsable, DefaultCollapsable),
+				SectionColumns:     cascadeInt(nil, lay.Columns, globalLayout.Columns, DefaultColumns),
+				SectionTitle:       section.Title,
+			})
 		}
 	}
 	return services
-}
-
-// GetTimeout returns the effective timeout in seconds, cascading through service,
-// section, and global levels before falling back to DefaultTimeout.
-func (s *FlatService) GetTimeout() int {
-	gc := (*int)(nil)
-	if s.Global != nil {
-		gc = s.Global.Timeout
-	}
-	return cascadeInt(s.ServiceCascade.Timeout, s.SectionCascade.Timeout, gc, DefaultTimeout)
-}
-
-// GetConfirm returns whether user confirmation is required, cascading through
-// service, section, and global levels before falling back to DefaultConfirm.
-func (s *FlatService) GetConfirm() bool {
-	gc := (*bool)(nil)
-	if s.Global != nil {
-		gc = s.Global.Confirm
-	}
-	return cascadeBool(s.ServiceCascade.Confirm, s.SectionCascade.Confirm, gc, DefaultConfirm)
-}
-
-// GetAllowed returns the resolved ACL list for the service, cascading through
-// service, section, and global levels. Returns nil if unset (public access).
-func (s *FlatService) GetAllowed() []string {
-	if s.ServiceCascade.Allowed != nil {
-		return s.ServiceCascade.Allowed
-	}
-	if s.SectionCascade.Allowed != nil {
-		return s.SectionCascade.Allowed
-	}
-	if s.Global != nil && s.Global.Allowed != nil {
-		return s.Global.Allowed
-	}
-	return nil
-}
-
-// GetCollapsable returns whether the section should start collapsed in the UI,
-// cascading through section and global levels before falling back to DefaultCollapsable.
-func (s *FlatService) GetCollapsable() bool {
-	gc := (*bool)(nil)
-	if s.Global != nil {
-		gc = s.Global.Collapsable
-	}
-	return cascadeBool(nil, s.SectionLayout.Collapsable, gc, DefaultCollapsable)
-}
-
-// GetEnabled returns whether the service is enabled, cascading through service,
-// section, and global levels before defaulting to true.
-func (s *FlatService) GetEnabled() bool {
-	gc := (*bool)(nil)
-	if s.Global != nil {
-		gc = s.Global.Enabled
-	}
-	return cascadeBool(s.ServiceCascade.Enabled, s.SectionCascade.Enabled, gc, true)
-}
-
-// GetRestricted returns whether the service is restricted from public listing,
-// cascading through service, section, and global levels before defaulting to true.
-func (s *FlatService) GetRestricted() bool {
-	gc := (*bool)(nil)
-	if s.Global != nil {
-		gc = s.Global.Restricted
-	}
-	return cascadeBool(s.ServiceCascade.Restricted, s.SectionCascade.Restricted, gc, true)
-}
-
-// GetColumns returns the number of columns for the section's service grid,
-// cascading through section and global levels before falling back to DefaultColumns.
-func (s *FlatService) GetColumns() int {
-	gc := (*int)(nil)
-	if s.Global != nil {
-		gc = s.Global.Columns
-	}
-	return cascadeInt(nil, s.SectionLayout.Columns, gc, DefaultColumns)
-}
-
-// GetRemote returns the SSH remote chain for the service, cascading through
-// service, section, and global levels. Returns nil for local execution.
-func (s *FlatService) GetRemote() StringList {
-	if s.ServiceCascade.Remote != nil {
-		return s.ServiceCascade.Remote
-	}
-	if s.SectionCascade.Remote != nil {
-		return s.SectionCascade.Remote
-	}
-	if s.Global != nil && s.Global.Remote != nil {
-		return s.Global.Remote
-	}
-	return nil
-}
-
-// GetRemoteSSHOpts returns the SSH options for remote command execution,
-// cascading through service, section, and global levels. Returns nil if unset.
-func (s *FlatService) GetRemoteSSHOpts() StringList {
-	if s.ServiceCascade.RemoteSSHOpts != nil {
-		return s.ServiceCascade.RemoteSSHOpts
-	}
-	if s.SectionCascade.RemoteSSHOpts != nil {
-		return s.SectionCascade.RemoteSSHOpts
-	}
-	if s.Global != nil && s.Global.RemoteSSHOpts != nil {
-		return s.Global.RemoteSSHOpts
-	}
-	return nil
-}
-
-// GetTimeoutMs returns the effective timeout in milliseconds, including a buffer
-// for client-side overhead.
-func (s *FlatService) GetTimeoutMs() int {
-	return s.GetTimeout() * 1000
 }
 
 // Serialize produces the JSON-ready representation of a service for the frontend,
@@ -188,15 +94,15 @@ func (s *FlatService) Serialize(index int, username string, users map[string]*Us
 	return SerializedService{
 		ID:                 index,
 		Title:              s.Title,
-		Timeout:            s.GetTimeoutMs() + clientTimeoutBuffer,
-		Confirm:            s.GetConfirm(),
+		Timeout:            s.Timeout*1000 + clientTimeoutBuffer,
+		Confirm:            s.Confirm,
 		Section:            &sectionTitle,
-		SectionCollapsable: s.GetCollapsable(),
-		SectionColumns:     s.GetColumns(),
+		SectionCollapsable: s.SectionCollapsable,
+		SectionColumns:     s.SectionColumns,
 		Public:             isPublic,
 		Accessible:         isPublic || (username != "" && slices.Contains(allowedUsers, username)),
-		Enabled:            s.GetEnabled(),
+		Enabled:            s.Enabled,
 		AllowedUsers:       allowedUsers,
-		Restricted:         s.GetRestricted(),
+		Restricted:         s.Restricted,
 	}
 }

@@ -63,3 +63,33 @@ func TestStringListUnmarshalInvalid(t *testing.T) {
 		t.Error("expected error for mapping node, got nil")
 	}
 }
+
+func TestCascadeStringList(t *testing.T) {
+	tests := []struct {
+		name           string
+		svc, sec, global StringList
+		want           StringList
+	}{
+		{"all nil", nil, nil, nil, nil},
+		{"service overrides section", StringList{"svc"}, StringList{"sec"}, StringList{"global"}, StringList{"svc"}},
+		{"section overrides global", nil, StringList{"sec"}, StringList{"global"}, StringList{"sec"}},
+		{"falls back to global", nil, nil, StringList{"global"}, StringList{"global"}},
+		{"empty slice is explicit override", StringList{}, StringList{"sec"}, StringList{"global"}, StringList{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cascadeStringList(tt.svc, tt.sec, tt.global)
+			if len(got) != len(tt.want) {
+				t.Fatalf("cascadeStringList(%v, %v, %v) = %v, want %v", tt.svc, tt.sec, tt.global, got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("cascadeStringList(%v, %v, %v)[%d] = %q, want %q", tt.svc, tt.sec, tt.global, i, got[i], tt.want[i])
+				}
+			}
+			if tt.want == nil && got != nil {
+				t.Fatalf("cascadeStringList(%v, %v, %v) = %v, want nil", tt.svc, tt.sec, tt.global, got)
+			}
+		})
+	}
+}

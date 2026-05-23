@@ -16,7 +16,7 @@ func TestCascadeTimeout(t *testing.T) {
 	services := cfg.Flatten()
 
 	for _, svc := range services {
-		timeout := svc.GetTimeout()
+		timeout := svc.Timeout
 		switch svc.Title {
 		case "CPU":
 			if timeout != 10 {
@@ -49,7 +49,7 @@ func TestCascadeConfirm(t *testing.T) {
 	services := cfg.Flatten()
 
 	for _, svc := range services {
-		confirm := svc.GetConfirm()
+		confirm := svc.Confirm
 		switch svc.Title {
 		case "Date":
 			if confirm != false {
@@ -105,16 +105,16 @@ func TestFlatten_EnabledCascade(t *testing.T) {
 
 	services := cfg.Flatten()
 
-	if services[0].GetEnabled() {
+	if services[0].Enabled {
 		t.Error("Disabled Service: expected enabled=false")
 	}
-	if !services[1].GetEnabled() {
+	if !services[1].Enabled {
 		t.Error("Override Enabled: expected enabled=true (service overrides section)")
 	}
-	if !services[2].GetEnabled() {
+	if !services[2].Enabled {
 		t.Error("Normal Service: expected enabled=true (section)")
 	}
-	if services[3].GetEnabled() {
+	if services[3].Enabled {
 		t.Error("Default Service: expected enabled=false (cascaded from global)")
 	}
 }
@@ -137,10 +137,10 @@ func TestFlatten_RestrictedCascade(t *testing.T) {
 		},
 	}
 	services := cfg.Flatten()
-	if services[0].GetRestricted() {
+	if services[0].Restricted {
 		t.Error("Override: expected restricted=false (service overrides section)")
 	}
-	if !services[1].GetRestricted() {
+	if !services[1].Restricted {
 		t.Error("Inherit: expected restricted=true (inherits from section)")
 	}
 
@@ -157,7 +157,7 @@ func TestFlatten_RestrictedCascade(t *testing.T) {
 		},
 	}
 	services2 := cfg2.Flatten()
-	if services2[0].GetRestricted() {
+	if services2[0].Restricted {
 		t.Error("Inherit Global: expected restricted=false (inherited from global)")
 	}
 }
@@ -209,7 +209,7 @@ sections:
 	services := cfg.Flatten()
 
 	for _, svc := range services {
-		remote := svc.GetRemote()
+		remote := svc.Remote
 		switch svc.Title {
 		case "Inherits global remote":
 			if len(remote) != 1 || remote[0] != "server1.local" {
@@ -252,17 +252,17 @@ func TestStringListRemote(t *testing.T) {
 	for _, svc := range services {
 		switch svc.Title {
 		case "Remote uptime":
-			remote := svc.GetRemote()
+			remote := svc.Remote
 			if len(remote) != 1 || remote[0] != "server1.local" {
 				t.Errorf("Remote uptime: expected [server1.local], got %v", remote)
 			}
 		case "Two-hop uptime":
-			remote := svc.GetRemote()
+			remote := svc.Remote
 			if len(remote) != 2 {
 				t.Errorf("Two-hop uptime: expected 2 remote hosts, got %d", len(remote))
 			}
 		case "Three-hop date":
-			remote := svc.GetRemote()
+			remote := svc.Remote
 			if len(remote) != 3 {
 				t.Errorf("Three-hop date: expected 3 remote hosts, got %d", len(remote))
 			}
@@ -273,26 +273,22 @@ func TestStringListRemote(t *testing.T) {
 func TestCascadeRemoteSSHOpts(t *testing.T) {
 	t.Run("nil means nil (unset)", func(t *testing.T) {
 		svc := FlatService{
-			Title:          "t",
-			Command:        CommandValue{"echo"},
-			ServiceCascade: CascadeFields{},
-			SectionCascade: CascadeFields{},
-			Global:         &GlobalConfig{},
+			Title:         "t",
+			Command:       CommandValue{"echo"},
+			RemoteSSHOpts: nil,
 		}
-		if opts := svc.GetRemoteSSHOpts(); opts != nil {
+		if opts := svc.RemoteSSHOpts; opts != nil {
 			t.Errorf("expected nil, got %v", opts)
 		}
 	})
 
 	t.Run("service overrides section", func(t *testing.T) {
 		svc := FlatService{
-			Title:          "t",
-			Command:        CommandValue{"echo"},
-			ServiceCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "svc_opt"}},
-			SectionCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "sec_opt"}},
-			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+			Title:         "t",
+			Command:       CommandValue{"echo"},
+			RemoteSSHOpts: StringList{"-o", "svc_opt"},
 		}
-		opts := svc.GetRemoteSSHOpts()
+		opts := svc.RemoteSSHOpts
 		if len(opts) != 2 || opts[0] != "-o" || opts[1] != "svc_opt" {
 			t.Errorf("expected [-o svc_opt], got %v", opts)
 		}
@@ -300,13 +296,11 @@ func TestCascadeRemoteSSHOpts(t *testing.T) {
 
 	t.Run("section overrides global", func(t *testing.T) {
 		svc := FlatService{
-			Title:          "t",
-			Command:        CommandValue{"echo"},
-			ServiceCascade: CascadeFields{},
-			SectionCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "sec_opt"}},
-			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+			Title:         "t",
+			Command:       CommandValue{"echo"},
+			RemoteSSHOpts: StringList{"-o", "sec_opt"},
 		}
-		opts := svc.GetRemoteSSHOpts()
+		opts := svc.RemoteSSHOpts
 		if len(opts) != 2 || opts[0] != "-o" || opts[1] != "sec_opt" {
 			t.Errorf("expected [-o sec_opt], got %v", opts)
 		}
@@ -314,13 +308,11 @@ func TestCascadeRemoteSSHOpts(t *testing.T) {
 
 	t.Run("falls back to global", func(t *testing.T) {
 		svc := FlatService{
-			Title:          "t",
-			Command:        CommandValue{"echo"},
-			ServiceCascade: CascadeFields{},
-			SectionCascade: CascadeFields{},
-			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+			Title:         "t",
+			Command:       CommandValue{"echo"},
+			RemoteSSHOpts: StringList{"-o", "glb_opt"},
 		}
-		opts := svc.GetRemoteSSHOpts()
+		opts := svc.RemoteSSHOpts
 		if len(opts) != 2 || opts[0] != "-o" || opts[1] != "glb_opt" {
 			t.Errorf("expected [-o glb_opt], got %v", opts)
 		}
@@ -328,13 +320,11 @@ func TestCascadeRemoteSSHOpts(t *testing.T) {
 
 	t.Run("empty slice is explicit override (no opts)", func(t *testing.T) {
 		svc := FlatService{
-			Title:          "t",
-			Command:        CommandValue{"echo"},
-			ServiceCascade: CascadeFields{RemoteSSHOpts: StringList{}},
-			SectionCascade: CascadeFields{RemoteSSHOpts: StringList{"-o", "sec_opt"}},
-			Global:         &GlobalConfig{CascadeFields: CascadeFields{RemoteSSHOpts: StringList{"-o", "glb_opt"}}},
+			Title:         "t",
+			Command:       CommandValue{"echo"},
+			RemoteSSHOpts: StringList{},
 		}
-		opts := svc.GetRemoteSSHOpts()
+		opts := svc.RemoteSSHOpts
 		if opts == nil {
 			t.Errorf("expected empty slice, got nil")
 		}
@@ -384,17 +374,17 @@ sections:
 	for _, svc := range services {
 		switch svc.Title {
 		case "Inherits section opts":
-			opts := svc.GetRemoteSSHOpts()
+			opts := svc.RemoteSSHOpts
 			if len(opts) != 1 || opts[0] != "-o ConnectTimeout=5" {
 				t.Errorf("expected [-o ConnectTimeout=5], got %v", opts)
 			}
 		case "Overrides with own opts":
-			opts := svc.GetRemoteSSHOpts()
+			opts := svc.RemoteSSHOpts
 			if len(opts) != 2 || opts[0] != "-o" || opts[1] != "CustomOpt=yes" {
 				t.Errorf("expected [-o CustomOpt=yes], got %v", opts)
 			}
 		case "Global opts":
-			opts := svc.GetRemoteSSHOpts()
+			opts := svc.RemoteSSHOpts
 			if len(opts) != 2 {
 				t.Errorf("expected 2 opts, got %v", opts)
 			}
