@@ -9,8 +9,14 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/spaghetti-coder/estro"
+	"github.com/spaghetti-coder/estro/internal/auth"
+	"golang.org/x/crypto/bcrypt"
 	appMiddleware "github.com/spaghetti-coder/estro/internal/middleware"
 )
+
+func init() {
+	auth.SetBcryptCost(bcrypt.MinCost)
+}
 
 func setupStaticTestServer(t *testing.T) *echo.Echo {
 	t.Helper()

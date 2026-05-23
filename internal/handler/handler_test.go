@@ -31,13 +31,13 @@ global:
   restricted: false
 users:
   alice:
-    password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
+    password: '$2a$04$RaT2a8ho6k.L3WboREnlDOzOFvVRT4BZ27qHvoYjWIy.f86sEzRCi'
     groups: [admins]
   bob:
-    password: '$2y$10$IMxjm44TuD0J0JAHeqzcdOufsumn.G2Y.ZS15EOQq9vbmCg48Zvnm'
+    password: '$2a$04$eFgD5RBrhd9knn7y65gOo.puc0zS7aU/5vE9rtR2Zoh4W.PQN2Qti'
     groups: [admins, family]
   guest:
-    password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
+    password: '$2a$04$BHALOlcRQPMb435x.vD/0OTDO0fqn8e6iVb4BkIgVKuirpah7u0tW'
 sections:
   - title: Public Info
     collapsable: false
@@ -394,14 +394,24 @@ func TestRunServiceReturnsJobId(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
-	if result["jobId"] == nil || result["jobId"] == "" {
-		t.Error("expected jobId in response")
+		if result["jobId"] == nil || result["jobId"] == "" {
+			t.Error("expected jobId in response")
+		}
+
+		jobID, _ := result["jobId"].(string)
+
+	var j *job.Job
+	var ok bool
+	for i := 0; i < 20; i++ {
+		j, ok = store.Get(jobID)
+		if ok {
+			if j.Status == "done" || j.Status == "error" {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	time.Sleep(2 * time.Second)
-
-	jobID, _ := result["jobId"].(string)
-	j, ok := store.Get(jobID)
 	if !ok {
 		t.Fatalf("expected job %s to exist", jobID)
 	}
@@ -607,10 +617,10 @@ global:
   restricted: false
 users:
   alice:
-    password: '$2y$10$6c9tQEpF4w2Ev9XCLH2pauAawy2874wwgN5jCTyrYMYclVlTTNIs2'
+    password: '$2a$04$RaT2a8ho6k.L3WboREnlDOzOFvVRT4BZ27qHvoYjWIy.f86sEzRCi'
     groups: [admins]
   guest:
-    password: '$2y$10$VIRU2eYVGPRE1qf5PqDCQuSt9RPLd/0E2HxjmZeU6ELIgsFFmQn/C'
+    password: '$2a$04$BHALOlcRQPMb435x.vD/0OTDO0fqn8e6iVb4BkIgVKuirpah7u0tW'
 sections:
   - title: Public section
     services:

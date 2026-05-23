@@ -7,8 +7,13 @@ import (
 	"testing"
 
 	"github.com/gorilla/sessions"
+	"github.com/spaghetti-coder/estro/internal/config"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func init() {
+	SetBcryptCost(bcrypt.MinCost)
+}
 
 func TestGetSessionUserNotAuthenticated(t *testing.T) {
 	store := sessions.NewCookieStore([]byte("test-secret"))
@@ -58,8 +63,8 @@ func TestSetSessionUserRememberMe(t *testing.T) {
 	}
 }
 
-func TestComparePasswordFormats(t *testing.T) {
-	bcryptHash, err := bcrypt.GenerateFromPassword([]byte("secretpass"), bcrypt.DefaultCost)
+func TestAuthenticatePasswordFormats(t *testing.T) {
+	bcryptHash, err := bcrypt.GenerateFromPassword([]byte("secretpass"), bcryptCost)
 	if err != nil {
 		t.Fatalf("failed to generate hash: %v", err)
 	}
@@ -122,9 +127,10 @@ func TestComparePasswordFormats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ComparePassword(tt.stored, tt.plain)
-			if got != tt.want {
-				t.Errorf("ComparePassword(%q, %q) = %v, want %v", tt.stored, tt.plain, got, tt.want)
+			users := map[string]*config.UserConfig{"u": {Password: tt.stored}}
+			got := Authenticate(users, "u", tt.plain)
+			if (got != nil) != tt.want {
+				t.Errorf("Authenticate(..., u, %q) = %v, want non-nil %v", tt.plain, got, tt.want)
 			}
 		})
 	}
@@ -154,8 +160,9 @@ func TestHashPassword(t *testing.T) {
 			if err := bcrypt.CompareHashAndPassword([]byte(rawHash), []byte(tt.plain)); err != nil {
 				t.Errorf("bcrypt hash does not match plain password %q: %v", tt.plain, err)
 			}
-			if !ComparePassword(prefixed, tt.plain) {
-				t.Errorf("ComparePassword(%q, %q) = false, want true", prefixed, tt.plain)
+			users := map[string]*config.UserConfig{"u": {Password: prefixed}}
+			if Authenticate(users, "u", tt.plain) == nil {
+				t.Errorf("Authenticate with hash for %q returned nil", tt.plain)
 			}
 		})
 	}

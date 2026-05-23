@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spaghetti-coder/estro/internal/config"
@@ -62,6 +63,12 @@ func RunCommand(ctx context.Context, cmdStr string, timeout time.Duration) (stri
 		defer cancel()
 	}
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		return nil
+	}
+
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

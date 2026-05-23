@@ -18,39 +18,40 @@ const SessionCookieName = "connect.sid"
 
 const rememberMeMaxAge = 30 * 24 * 3600
 
+// bcryptCost is the cost factor used by HashPassword.
+var bcryptCost = 13
+
+// SetBcryptCost overrides the bcrypt cost. Intended for tests only.
+func SetBcryptCost(c int) { bcryptCost = c }
+
 // Authenticate verifies a username/password combination against the
-// provided user map. Returns nil on failure.
+// provided user map. Returns the user on success, nil on failure.
 func Authenticate(users map[string]*config.UserConfig, username, password string) *config.UserConfig {
-	user, ok := users[username]
-	if !ok {
-		return nil
+	if user, ok := users[username]; ok {
+		stored := user.Password
+		if strings.HasPrefix(stored, "plain:") {
+			if stored[len("plain:"):] == password {
+				return user
+			}
+		} else {
+			hash := strings.TrimPrefix(stored, "bcrypt:")
+			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil {
+				return user
+			}
+		}
 	}
-	if !ComparePassword(user.Password, password) {
-		return nil
-	}
-	return user
+
+	return nil
 }
 
 // HashPassword generates a bcrypt hash from a plain-text password
-// and returns it with the "bcrypt:" prefix used by ComparePassword.
+// and returns it with the "bcrypt:" prefix used by Authenticate.
 func HashPassword(plainPassword string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), 13)
+	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcryptCost)
 	if err != nil {
 		return "", fmt.Errorf("generate bcrypt hash: %w", err)
 	}
 	return "bcrypt:" + string(hash), nil
-}
-
-// ComparePassword compares a stored password with a plain-text password.
-// The stored password can be prefixed with "plain:" for plaintext comparison
-// or "bcrypt:" for bcrypt comparison. Unprefixed values are treated as bcrypt
-// hashes for backward compatibility.
-func ComparePassword(stored, plainPassword string) bool {
-	if strings.HasPrefix(stored, "plain:") {
-		return stored[len("plain:"):] == plainPassword
-	}
-	hash := strings.TrimPrefix(stored, "bcrypt:")
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plainPassword)) == nil
 }
 
 // GetSessionUser retrieves the authenticated username from the session cookie.
