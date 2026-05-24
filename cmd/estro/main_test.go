@@ -10,8 +10,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/spaghetti-coder/estro"
 	"github.com/spaghetti-coder/estro/internal/auth"
-	"golang.org/x/crypto/bcrypt"
 	appMiddleware "github.com/spaghetti-coder/estro/internal/middleware"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func init() {

@@ -394,11 +394,11 @@ func TestRunServiceReturnsJobId(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
-		if result["jobId"] == nil || result["jobId"] == "" {
-			t.Error("expected jobId in response")
-		}
+	if result["jobId"] == nil || result["jobId"] == "" {
+		t.Error("expected jobId in response")
+	}
 
-		jobID, _ := result["jobId"].(string)
+	jobID, _ := result["jobId"].(string)
 
 	var j *job.Job
 	var ok bool

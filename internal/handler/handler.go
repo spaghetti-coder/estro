@@ -149,16 +149,16 @@ func (h *Handler) runService(c *echo.Context) error {
 	}
 
 	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
-	if svc.Restricted && !svc.IsAccessible(username, h.cfg.Users) {
+	accessible := svc.IsAccessible(username, h.cfg.Users)
+	if svc.Restricted && !accessible {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Unknown service"})
 	}
-	if !svc.IsAccessible(username, h.cfg.Users) {
+	if !accessible {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
 	}
 
-	remote := svc.Remote
 	sshOpts := strings.Join(svc.RemoteSSHOpts, " ")
-	cmd, err := exec.BuildCmd(svc.Command, remote, sshOpts)
+	cmd, err := exec.BuildCmd(svc.Command, svc.Remote, sshOpts)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
@@ -182,24 +182,19 @@ func (h *Handler) runService(c *echo.Context) error {
 func (h *Handler) executeAsync(jobID string, svc config.FlatService, cmd string) {
 	timeout := time.Duration(svc.Timeout) * time.Second
 	stdout, stderr, cmdErr := exec.RunCommand(h.cmdCtx, cmd, timeout)
+	status := "done"
 	if cmdErr != nil {
-		if stderr == "" {
+		status = "error"
+		if stderr != "" {
 			stderr = cmdErr.Error()
 		}
-		h.jobs.Set(jobID, &job.Job{
-			Status: "error",
-			Title:  svc.Title,
-			Stdout: stdout,
-			Stderr: stderr,
-		})
-	} else {
-		h.jobs.Set(jobID, &job.Job{
-			Status: "done",
-			Title:  svc.Title,
-			Stdout: stdout,
-			Stderr: stderr,
-		})
 	}
+	h.jobs.Set(jobID, &job.Job{
+		Status: status,
+		Title:  svc.Title,
+		Stdout: stdout,
+		Stderr: stderr,
+	})
 	h.jobs.ScheduleCleanup(jobID, jobTTL)
 }
 

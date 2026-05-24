@@ -12,6 +12,27 @@ import (
 // When used in ACL contexts, nil means public access, while an empty slice also means public.
 type StringList []string
 
+// CommandValue represents a shell command, which can be a single string
+// or an array of commands joined with "&&" in YAML.
+type CommandValue []string
+
+// CascadeFields holds fields that cascade: global → section → service.
+type CascadeFields struct {
+	Timeout       *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
+	Confirm       *bool      `yaml:"confirm,omitempty"`
+	Allowed       StringList `yaml:"allowed,omitempty"`
+	Remote        StringList `yaml:"remote,omitempty"`
+	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty"`
+	Enabled       *bool      `yaml:"enabled,omitempty"`
+	Restricted    *bool      `yaml:"restricted,omitempty"`
+}
+
+// LayoutFields holds fields that cascade: global → section (not service-level).
+type LayoutFields struct {
+	Collapsable *bool `yaml:"collapsable,omitempty"`
+	Columns     *int  `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
+}
+
 func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
 	case yaml.ScalarNode:
@@ -42,10 +63,6 @@ func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-// CommandValue represents a shell command, which can be a single string
-// or an array of commands joined with "&&" in YAML.
-type CommandValue []string
-
 func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
 	case yaml.ScalarNode:
@@ -63,37 +80,8 @@ func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-// CascadeFields holds fields that cascade: global → section → service.
-type CascadeFields struct {
-	Timeout       *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
-	Confirm       *bool      `yaml:"confirm,omitempty"`
-	Allowed       StringList `yaml:"allowed,omitempty"`
-	Remote        StringList `yaml:"remote,omitempty"`
-	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty"`
-	Enabled       *bool      `yaml:"enabled,omitempty"`
-	Restricted    *bool      `yaml:"restricted,omitempty"`
-}
-
-// LayoutFields holds fields that cascade: global → section (not service-level).
-type LayoutFields struct {
-	Collapsable *bool `yaml:"collapsable,omitempty"`
-	Columns     *int  `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
-}
-
-func cascadeInt(svc, sec, global *int, defaultVal int) int {
-	if svc != nil {
-		return *svc
-	}
-	if sec != nil {
-		return *sec
-	}
-	if global != nil {
-		return *global
-	}
-	return defaultVal
-}
-
-func cascadeBool(svc, sec, global *bool, defaultVal bool) bool {
+// cascade returns the first non-nil pointer value among svc, sec, global, or defaultVal if all are nil.
+func cascade[T any](svc, sec, global *T, defaultVal T) T {
 	if svc != nil {
 		return *svc
 	}

@@ -9,16 +9,6 @@ import (
 	"time"
 )
 
-// GenerateID creates a cryptographically random 32-character hex string
-// suitable for use as a job identifier.
-func GenerateID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate job ID: %w", err)
-	}
-	return hex.EncodeToString(b), nil
-}
-
 // Job represents the state and output of an asynchronous command execution.
 type Job struct {
 	Status string `json:"status"`
@@ -31,6 +21,16 @@ type Job struct {
 type Store struct {
 	mu   sync.RWMutex
 	jobs map[string]*Job
+}
+
+// GenerateID creates a cryptographically random 32-character hex string
+// suitable for use as a job identifier.
+func GenerateID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate job ID: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // NewStore creates and returns an empty job store.

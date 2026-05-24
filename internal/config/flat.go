@@ -69,15 +69,15 @@ func (c *Config) Flatten() []FlatService {
 			services = append(services, FlatService{
 				Title:              svc.Title,
 				Command:            svc.Command,
-				Timeout:            cascadeInt(svc.Timeout, sec.Timeout, global.Timeout, DefaultTimeout),
-				Confirm:            cascadeBool(svc.Confirm, sec.Confirm, global.Confirm, DefaultConfirm),
-				Enabled:            cascadeBool(svc.Enabled, sec.Enabled, global.Enabled, true),
-				Restricted:         cascadeBool(svc.Restricted, sec.Restricted, global.Restricted, true),
+				Timeout:            cascade(svc.Timeout, sec.Timeout, global.Timeout, defaultTimeout),
+				Confirm:            cascade(svc.Confirm, sec.Confirm, global.Confirm, defaultConfirm),
+				Enabled:            cascade(svc.Enabled, sec.Enabled, global.Enabled, true),
+				Restricted:         cascade(svc.Restricted, sec.Restricted, global.Restricted, true),
 				Allowed:            cascadeStringList(svc.Allowed, sec.Allowed, global.Allowed),
 				Remote:             cascadeStringList(svc.Remote, sec.Remote, global.Remote),
 				RemoteSSHOpts:      cascadeStringList(svc.RemoteSSHOpts, sec.RemoteSSHOpts, global.RemoteSSHOpts),
-				SectionCollapsable: cascadeBool(nil, lay.Collapsable, globalLayout.Collapsable, DefaultCollapsable),
-				SectionColumns:     cascadeInt(nil, lay.Columns, globalLayout.Columns, DefaultColumns),
+				SectionCollapsable: cascade(nil, lay.Collapsable, globalLayout.Collapsable, defaultCollapsable),
+				SectionColumns:     cascade(nil, lay.Columns, globalLayout.Columns, defaultColumns),
 				SectionTitle:       section.Title,
 			})
 		}

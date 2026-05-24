@@ -37,21 +37,19 @@ func BuildCmd(command config.CommandValue, remote config.StringList, sshOpts str
 	if len(remote) == 0 {
 		return cmd, nil
 	}
-	hosts := remote
-	for _, h := range hosts {
+	for _, h := range remote {
 		if err := ValidateHost(h); err != nil {
 			return "", err
 		}
 	}
-	result := cmd
 	sshPart := "ssh"
 	if sshOpts != "" {
 		sshPart = "ssh " + sshOpts
 	}
-	for i := len(hosts) - 1; i >= 0; i-- {
-		result = fmt.Sprintf("%s %s '%s'", sshPart, hosts[i], ShellEscape(result))
+	for i := len(remote) - 1; i >= 0; i-- {
+		cmd = fmt.Sprintf("%s %s '%s'", sshPart, remote[i], ShellEscape(cmd))
 	}
-	return result, nil
+	return cmd, nil
 }
 
 // RunCommand executes a shell command via "sh -c" with an optional timeout,

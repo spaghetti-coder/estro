@@ -4,13 +4,25 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"go.yaml.in/yaml/v4"
+)
+
+const (
+	defaultHostname    = "127.0.0.1"
+	defaultPort        = 3000
+	defaultTitle       = "Estro"
+	defaultSubtitle    = ""
+	defaultTimeout     = 60
+	defaultConfirm     = true
+	defaultCollapsable = true
+	defaultColumns     = 3
 )
 
 // validate is a package-level singleton validator instance to avoid
@@ -26,34 +38,6 @@ var validate = func() *validator.Validate {
 	})
 	return v
 }()
-
-const (
-	// DefaultTimeout is the default command execution timeout in seconds.
-	DefaultTimeout = 60
-	// DefaultConfirm is the default value for requiring user confirmation before running a command.
-	DefaultConfirm = true
-	// DefaultCollapsable is the default value for whether sections start collapsed in the UI.
-	DefaultCollapsable = true
-	// DefaultColumns is the default number of columns in the service grid.
-	DefaultColumns = 3
-
-	defaultHostname = "127.0.0.1"
-	defaultPort     = 3000
-)
-
-// Addr returns the host:port address string for the server to listen on,
-// falling back to defaults (127.0.0.1:3000) when not explicitly set.
-func (g *GlobalConfig) Addr() string {
-	hostname := defaultHostname
-	port := defaultPort
-	if g.Hostname != nil {
-		hostname = *g.Hostname
-	}
-	if g.Port != nil {
-		port = *g.Port
-	}
-	return fmt.Sprintf("%s:%d", hostname, port)
-}
 
 // Config represents the top-level Estro configuration loaded from YAML.
 type Config struct {
@@ -92,6 +76,20 @@ type ServiceConfig struct {
 	Title         string       `yaml:"title" validate:"required"`
 	Command       CommandValue `yaml:"command" validate:"required"`
 	CascadeFields `yaml:",inline"`
+}
+
+// coalesce returns the value pointed to by ptr, or the provided fallback if ptr is nil.
+func coalesce[T any](ptr *T, fallback T) T {
+	if ptr != nil {
+		return *ptr
+	}
+	return fallback
+}
+
+// Addr returns the host:port address string for the server to listen on,
+// falling back to defaults (127.0.0.1:3000) when not explicitly set.
+func (g *GlobalConfig) Addr() string {
+	return fmt.Sprintf("%s:%d", coalesce(g.Hostname, defaultHostname), coalesce(g.Port, defaultPort))
 }
 
 // Load reads and validates the YAML configuration file at path.
@@ -138,22 +136,9 @@ func (c *Config) GetGlobal() *GlobalConfig {
 // and sorted list of usernames for the frontend.
 func (c *Config) GetConfigResponse() ConfigResponse {
 	g := c.GetGlobal()
-	title := "Estro"
-	if g.Title != nil {
-		title = *g.Title
-	}
-	subtitle := ""
-	if g.Subtitle != nil {
-		subtitle = *g.Subtitle
-	}
-	userNames := make([]string, 0, len(c.Users))
-	for name := range c.Users {
-		userNames = append(userNames, name)
-	}
-	sort.Strings(userNames)
 	return ConfigResponse{
-		Title:    title,
-		Subtitle: subtitle,
-		Users:    userNames,
+		Title:    coalesce(g.Title, defaultTitle),
+		Subtitle: coalesce(g.Subtitle, defaultSubtitle),
+		Users:    slices.Sorted(maps.Keys(c.Users)),
 	}
 }

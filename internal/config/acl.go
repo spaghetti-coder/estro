@@ -1,8 +1,8 @@
 package config
 
 import (
+	"maps"
 	"slices"
-	"sort"
 )
 
 // ResolveAllowed expands the service's allowed list into concrete usernames,
@@ -26,12 +26,7 @@ func (s *FlatService) ResolveAllowed(users map[string]*UserConfig) []string {
 			}
 		}
 	}
-	sorted := make([]string, 0, len(result))
-	for k := range result {
-		sorted = append(sorted, k)
-	}
-	sort.Strings(sorted)
-	return sorted
+	return slices.Sorted(maps.Keys(result))
 }
 
 // IsAccessible reports whether the given username can access the service.
