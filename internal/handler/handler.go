@@ -167,7 +167,7 @@ func (h *Handler) runService(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate job ID"})
 	}
-	h.jobs.Set(jobID, &job.Job{Status: "running", Title: svc.Title})
+	h.jobs.Set(jobID, &job.Job{Status: job.StatusRunning, Title: svc.Title})
 
 	if err := c.JSON(http.StatusAccepted, map[string]string{"jobId": jobID}); err != nil {
 		h.jobs.Delete(jobID)
@@ -182,9 +182,9 @@ func (h *Handler) runService(c *echo.Context) error {
 func (h *Handler) executeAsync(jobID string, svc config.FlatService, cmd string) {
 	timeout := time.Duration(svc.Timeout) * time.Second
 	stdout, stderr, cmdErr := exec.RunCommand(h.cmdCtx, cmd, timeout)
-	status := "done"
+	status := job.StatusDone
 	if cmdErr != nil {
-		status = "error"
+		status = job.StatusError
 		if stderr != "" {
 			stderr = cmdErr.Error()
 		}

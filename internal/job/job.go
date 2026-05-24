@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// Status constants for Job.Status.
+const (
+	StatusRunning = "running"
+	StatusDone    = "done"
+	StatusError   = "error"
+)
+
 // Job represents the state and output of an asynchronous command execution.
 type Job struct {
 	Status string `json:"status"`
@@ -69,13 +76,13 @@ func (s *Store) ScheduleCleanup(id string, ttl time.Duration) {
 	})
 }
 
-// MarkAllRunningAsError transitions all jobs with status "running" to "error"
+// MarkAllRunningAsError transitions all jobs with status StatusRunning to StatusError
 // and sets their Stderr to the provided message.
 func (s *Store) MarkAllRunningAsError(msg string) {
 	s.mu.Lock()
 	for _, job := range s.jobs {
-		if job.Status == "running" {
-			job.Status = "error"
+		if job.Status == StatusRunning {
+			job.Status = StatusError
 			job.Stderr = msg
 		}
 	}

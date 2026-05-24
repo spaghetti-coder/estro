@@ -7,32 +7,58 @@ import (
 )
 
 func TestStoreSetGet(t *testing.T) {
-	s := NewStore()
-	j := &Job{Status: "running", Title: "test"}
-	s.Set("id1", j)
-	got, ok := s.Get("id1")
-	if !ok {
-		t.Fatal("expected job to exist")
+	tests := []struct {
+		name       string
+		setup      func(*Store)
+		id         string
+		wantOK     bool
+		wantStatus string
+		wantTitle  string
+	}{
+		{
+			name: "existing job",
+			setup: func(s *Store) {
+				s.Set("id1", &Job{Status: StatusRunning, Title: "test"})
+			},
+			id:         "id1",
+			wantOK:     true,
+			wantStatus: StatusRunning,
+			wantTitle:  "test",
+		},
+		{
+			name:       "nonexistent job",
+			setup:      func(s *Store) {},
+			id:         "nonexistent",
+			wantOK:     false,
+			wantStatus: "",
+			wantTitle:  "",
+		},
 	}
-	if got.Status != "running" {
-		t.Errorf("expected status %q, got %q", "running", got.Status)
-	}
-	if got.Title != "test" {
-		t.Errorf("expected title %q, got %q", "test", got.Title)
-	}
-}
 
-func TestStoreGetNonexistent(t *testing.T) {
-	s := NewStore()
-	_, ok := s.Get("nonexistent")
-	if ok {
-		t.Error("expected job to not exist")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewStore()
+			tt.setup(s)
+			got, ok := s.Get(tt.id)
+			if ok != tt.wantOK {
+				t.Fatalf("expected ok=%v, got ok=%v", tt.wantOK, ok)
+			}
+			if !ok {
+				return
+			}
+			if got.Status != tt.wantStatus {
+				t.Errorf("expected status %q, got %q", tt.wantStatus, got.Status)
+			}
+			if got.Title != tt.wantTitle {
+				t.Errorf("expected title %q, got %q", tt.wantTitle, got.Title)
+			}
+		})
 	}
 }
 
 func TestStoreDelete(t *testing.T) {
 	s := NewStore()
-	s.Set("id1", &Job{Status: "done", Title: "test"})
+	s.Set("id1", &Job{Status: StatusDone, Title: "test"})
 	s.Delete("id1")
 	_, ok := s.Get("id1")
 	if ok {
@@ -42,7 +68,7 @@ func TestStoreDelete(t *testing.T) {
 
 func TestStoreScheduleCleanup(t *testing.T) {
 	s := NewStore()
-	s.Set("id1", &Job{Status: "done", Title: "test"})
+	s.Set("id1", &Job{Status: StatusDone, Title: "test"})
 	s.ScheduleCleanup("id1", 50*time.Millisecond)
 	time.Sleep(100 * time.Millisecond)
 	_, ok := s.Get("id1")
@@ -52,25 +78,48 @@ func TestStoreScheduleCleanup(t *testing.T) {
 }
 
 func TestStoreMarkAllRunningAsError(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string
+		wantStatus string
+		wantStderr string
+	}{
+		{
+			name:       "running job becomes error",
+			id:         "r1",
+			wantStatus: StatusError,
+			wantStderr: "server shutting down",
+		},
+		{
+			name:       "another running job becomes error",
+			id:         "r2",
+			wantStatus: StatusError,
+			wantStderr: "server shutting down",
+		},
+		{
+			name:       "done job stays done",
+			id:         "d1",
+			wantStatus: StatusDone,
+			wantStderr: "",
+		},
+	}
+
 	s := NewStore()
-	s.Set("r1", &Job{Status: "running", Title: "running job"})
-	s.Set("r2", &Job{Status: "running", Title: "another running"})
-	s.Set("d1", &Job{Status: "done", Title: "done job"})
+	s.Set("r1", &Job{Status: StatusRunning, Title: "running job"})
+	s.Set("r2", &Job{Status: StatusRunning, Title: "another running"})
+	s.Set("d1", &Job{Status: StatusDone, Title: "done job"})
 	s.MarkAllRunningAsError("server shutting down")
-	j1, _ := s.Get("r1")
-	if j1.Status != "error" {
-		t.Errorf("expected status %q, got %q", "error", j1.Status)
-	}
-	if j1.Stderr != "server shutting down" {
-		t.Errorf("expected stderr %q, got %q", "server shutting down", j1.Stderr)
-	}
-	j2, _ := s.Get("r2")
-	if j2.Status != "error" {
-		t.Errorf("expected status %q, got %q", "error", j2.Status)
-	}
-	j3, _ := s.Get("d1")
-	if j3.Status != "done" {
-		t.Errorf("expected done job to remain %q, got %q", "done", j3.Status)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := s.Get(tt.id)
+			if got.Status != tt.wantStatus {
+				t.Errorf("expected status %q, got %q", tt.wantStatus, got.Status)
+			}
+			if got.Stderr != tt.wantStderr {
+				t.Errorf("expected stderr %q, got %q", tt.wantStderr, got.Stderr)
+			}
+		})
 	}
 }
 
@@ -82,7 +131,7 @@ func TestStoreConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			id := string(rune('a' + i%26))
-			s.Set(id, &Job{Status: "running", Title: id})
+			s.Set(id, &Job{Status: StatusRunning, Title: id})
 		}(i)
 	}
 	for i := range 100 {
@@ -94,4 +143,27 @@ func TestStoreConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestGenerateID(t *testing.T) {
+	id1, err := GenerateID()
+	if err != nil {
+		t.Fatalf("GenerateID() error = %v", err)
+	}
+	if len(id1) != 32 {
+		t.Errorf("expected length 32, got %d", len(id1))
+	}
+	for i, c := range id1 {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			t.Errorf("invalid hex character %q at position %d", c, i)
+		}
+	}
+
+	id2, err := GenerateID()
+	if err != nil {
+		t.Fatalf("GenerateID() second call error = %v", err)
+	}
+	if id1 == id2 {
+		t.Error("expected two sequential IDs to be different")
+	}
 }

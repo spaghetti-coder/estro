@@ -405,7 +405,7 @@ func TestRunServiceReturnsJobId(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		j, ok = store.Get(jobID)
 		if ok {
-			if j.Status == "done" || j.Status == "error" {
+			if j.Status == job.StatusDone || j.Status == job.StatusError {
 				break
 			}
 		}
@@ -415,7 +415,7 @@ func TestRunServiceReturnsJobId(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected job %s to exist", jobID)
 	}
-	if j.Status != "done" && j.Status != "running" && j.Status != "error" {
+	if j.Status != job.StatusDone && j.Status != job.StatusRunning && j.Status != job.StatusError {
 		t.Errorf("expected job status done/running/error, got %s", j.Status)
 	}
 }
@@ -452,7 +452,7 @@ func TestGetJobRunning(t *testing.T) {
 
 func TestGetJobCompleted(t *testing.T) {
 	store := job.NewStore()
-	store.Set("test-job", &job.Job{Status: "done", Title: "Test", Stdout: "hello"})
+	store.Set("test-job", &job.Job{Status: job.StatusDone, Title: "Test", Stdout: "hello"})
 
 	cfg := loadTestConfig(t)
 	sessionSecret, err := auth.GenerateSessionSecret()
@@ -477,7 +477,7 @@ func TestGetJobCompleted(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
-	if result["status"] != "done" {
+	if result["status"] != job.StatusDone {
 		t.Errorf("expected status 'done', got %v", result["status"])
 	}
 	if result["stdout"] != "hello" {
