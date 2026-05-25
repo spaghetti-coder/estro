@@ -75,12 +75,7 @@ func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter
 	if rememberMe {
 		maxAge = rememberMeMaxAge
 	}
-	session.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   maxAge,
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	}
+	session.Options = getSessionOptions(maxAge)
 	return session.Save(r, w)
 }
 
@@ -115,12 +110,16 @@ func SessionMiddleware(store sessions.Store) echo.MiddlewareFunc {
 func DestroySession(store sessions.Store, r *http.Request, w http.ResponseWriter) error {
 	// Error ignored: Get() always returns a usable session.
 	session, _ := store.Get(r, SessionCookieName)
-	session.Options = &sessions.Options{
+	session.Options = getSessionOptions(-1)
+	session.Values = map[any]any{}
+	return session.Save(r, w)
+}
+
+func getSessionOptions(maxAge int) *sessions.Options {
+	return &sessions.Options{
 		Path:     "/",
-		MaxAge:   -1,
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	}
-	session.Values = map[interface{}]interface{}{}
-	return session.Save(r, w)
 }
