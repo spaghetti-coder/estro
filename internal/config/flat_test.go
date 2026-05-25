@@ -6,107 +6,47 @@ import (
 	"testing"
 )
 
-func TestResolveAllowedNil(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-	}
-	svc := FlatService{Allowed: nil}
-	result := svc.ResolveAllowed(users)
-	if result != nil {
-		t.Errorf("expected nil for Allowed=nil, got %v", result)
-	}
-}
-
-func TestResolveAllowedEmptySlice(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-	}
-	svc := FlatService{Allowed: []string{}}
-	result := svc.ResolveAllowed(users)
-	if result != nil {
-		t.Errorf("expected nil for empty Allowed, got %v", result)
-	}
-}
-
-func TestResolveAllowedGroup(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-		"bob":   {Password: "hash", Groups: []string{"admins", "family"}},
-	}
-	svc := FlatService{Allowed: []string{"admins"}}
-	result := svc.ResolveAllowed(users)
-	if len(result) != 2 {
-		t.Errorf("expected 2 users for 'admins' group, got %d: %v", len(result), result)
-	}
-	if !slices.Contains(result, "alice") || !slices.Contains(result, "bob") {
-		t.Errorf("expected alice and bob, got %v", result)
-	}
-}
-
-func TestResolveAllowedSingleUser(t *testing.T) {
-	users := map[string]*UserConfig{
-		"guest": {Password: "hash"},
-	}
-	svc := FlatService{Allowed: []string{"guest"}}
-	result := svc.ResolveAllowed(users)
-	if len(result) != 1 || result[0] != "guest" {
-		t.Errorf("expected [guest], got %v", result)
-	}
-}
-
 func TestIsAccessible(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-		"bob":   {Password: "hash", Groups: []string{"admins"}},
-		"guest": {Password: "hash"},
-	}
-
 	publicSvc := FlatService{Allowed: nil}
-	if !publicSvc.IsAccessible("", users) {
+	if !publicSvc.IsAccessible("") {
 		t.Error("public service should be accessible with no user")
 	}
-	if !publicSvc.IsAccessible("alice", users) {
+	if !publicSvc.IsAccessible("alice") {
 		t.Error("public service should be accessible with any user")
 	}
 
-	restrictedSvc := FlatService{Allowed: []string{"admins"}}
-	if restrictedSvc.IsAccessible("", users) {
+	restrictedSvc := FlatService{Allowed: []string{"alice", "bob"}}
+	if restrictedSvc.IsAccessible("") {
 		t.Error("restricted service should not be accessible with empty user")
 	}
-	if !restrictedSvc.IsAccessible("alice", users) {
-		t.Error("restricted service should be accessible to admin user")
+	if !restrictedSvc.IsAccessible("alice") {
+		t.Error("restricted service should be accessible to named user")
 	}
-	if restrictedSvc.IsAccessible("guest", users) {
-		t.Error("restricted service should not be accessible to guest")
+	if restrictedSvc.IsAccessible("guest") {
+		t.Error("restricted service should not be accessible to non-named user")
 	}
 
-	emptyAllowed := FlatService{Allowed: []string{}}
-	if !emptyAllowed.IsAccessible("", users) {
-		t.Error("empty allowed should be accessible (public)")
+	emptyAllowed := FlatService{Allowed: nil}
+	if !emptyAllowed.IsAccessible("guest") {
+		t.Error("nil allowed (public) should be accessible")
 	}
 }
 
 func TestRestrictedTrue_EmptyAllowedIsPublic(t *testing.T) {
 	flat := FlatService{
 		Restricted: true,
-		Allowed:    []string{},
-	}
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash"},
+		Allowed:    nil,
 	}
 	if flat.Restricted {
-		if !flat.IsAccessible("guest", users) {
-			t.Error("restricted=true + allowed=[] should be public")
+		if !flat.IsAccessible("guest") {
+			t.Error("restricted=true + nil allowed should be public")
 		}
 	}
 }
 
 func TestRestrictedTrue_NilAllowedIsPublic(t *testing.T) {
 	flat := FlatService{}
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash"},
-	}
-	if !flat.IsAccessible("", users) {
+	if !flat.IsAccessible("") {
 		t.Error("restricted=true (default) + nil allowed at all levels should be public")
 	}
 }
@@ -129,7 +69,7 @@ func TestSerializeService(t *testing.T) {
 				continue
 			}
 			found = true
-			serialized := svc.Serialize(i, "alice", cfg.Users)
+			serialized := svc.Serialize(i, "alice")
 			if serialized.ID != i {
 				t.Errorf("%s: expected id %d, got %d", wantTitle, i, serialized.ID)
 			}
@@ -163,7 +103,7 @@ func TestSerialize_Restricted(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			serialized := tt.flat.Serialize(0, "", nil)
+			serialized := tt.flat.Serialize(0, "")
 			if serialized.Restricted != tt.wantRestr {
 				t.Errorf("Restricted = %v, want %v", serialized.Restricted, tt.wantRestr)
 			}
@@ -181,7 +121,7 @@ func TestSerialize_Enabled(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			serialized := tt.flat.Serialize(0, "", nil)
+			serialized := tt.flat.Serialize(0, "")
 			if serialized.Enabled != tt.wantEnabl {
 				t.Errorf("Enabled = %v, want %v", serialized.Enabled, tt.wantEnabl)
 			}
@@ -210,5 +150,154 @@ func TestCommandValueString(t *testing.T) {
 				t.Errorf("Disk usage: expected 3 commands, got %d", len(svc.Command))
 			}
 		}
+	}
+}
+
+func TestFlatten_AclResolution(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML())
+	defer func() { _ = os.Remove(path) }()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := cfg.Flatten()
+
+	findSvc := func(title string) *FlatService {
+		for i := range services {
+			if services[i].Title == title {
+				return &services[i]
+			}
+		}
+		return nil
+	}
+
+	// Case 1: Service in "Admin" section with allowed: [admins] → resolved to concrete usernames
+	adminSvc := findSvc("Who")
+	if adminSvc == nil {
+		t.Fatal("expected to find 'Who' service")
+	}
+	if adminSvc.Allowed == nil {
+		t.Error("expected non-nil Allowed for 'Who' service (group 'admins' should resolve)")
+	} else {
+		if !slices.Contains(adminSvc.Allowed, "alice") || !slices.Contains(adminSvc.Allowed, "bob") {
+			t.Errorf("expected 'admins' group resolved to [alice, bob], got %v", adminSvc.Allowed)
+		}
+	}
+
+	// Case 2: Service with allowed: [] (empty) → nil (public per CONF-05)
+	publicSvc := findSvc("Public status")
+	if publicSvc == nil {
+		t.Fatal("expected to find 'Public status' service")
+	}
+	if publicSvc.Allowed != nil {
+		t.Errorf("expected nil Allowed for empty allowed (public), got %v", publicSvc.Allowed)
+	}
+
+	// Case 3: Service with allowed: [guest] (direct username) → ["guest"]
+	guestSvc := findSvc("Guest allowed")
+	if guestSvc == nil {
+		t.Fatal("expected to find 'Guest allowed' service")
+	}
+	if len(guestSvc.Allowed) != 1 || guestSvc.Allowed[0] != "guest" {
+		t.Errorf("expected Allowed=[guest] for direct username, got %v", guestSvc.Allowed)
+	}
+
+	// Case 4: Service with no allowed (cascades to section's allowed: [admins]) → resolved group
+	adminOnlySvc := findSvc("Admin only")
+	if adminOnlySvc == nil {
+		t.Fatal("expected to find 'Admin only' service")
+	}
+	if adminOnlySvc.Allowed == nil {
+		t.Error("expected non-nil Allowed for 'Admin only' (cascades to section's 'admins')")
+	} else {
+		if !slices.Contains(adminOnlySvc.Allowed, "alice") || !slices.Contains(adminOnlySvc.Allowed, "bob") {
+			t.Errorf("expected 'admins' group resolved to [alice, bob], got %v", adminOnlySvc.Allowed)
+		}
+	}
+
+	// Case 5: Service with allowed: [admins, guest] in "Local override"
+	localSvc := findSvc("Local override")
+	if localSvc == nil {
+		t.Fatal("expected to find 'Local override' service")
+	}
+	if localSvc.Allowed == nil {
+		t.Error("expected non-nil Allowed for 'Local override'")
+	} else {
+		if !slices.Contains(localSvc.Allowed, "alice") || !slices.Contains(localSvc.Allowed, "guest") {
+			t.Errorf("expected 'admins,guest' resolved to include alice and guest, got %v", localSvc.Allowed)
+		}
+	}
+}
+
+func TestResolveAllowed_NilInput(t *testing.T) {
+	users := map[string]*UserConfig{
+		"alice": {Password: "hash", Groups: []string{"admins"}},
+	}
+	result := resolveAllowed(nil, users)
+	if result != nil {
+		t.Errorf("expected nil for nil input, got %v", result)
+	}
+}
+
+func TestResolveAllowed_EmptySlice(t *testing.T) {
+	users := map[string]*UserConfig{
+		"alice": {Password: "hash", Groups: []string{"admins"}},
+	}
+	result := resolveAllowed([]string{}, users)
+	if result != nil {
+		t.Errorf("expected nil for empty slice input, got %v", result)
+	}
+}
+
+func TestResolveAllowed_GroupExpansion(t *testing.T) {
+	users := map[string]*UserConfig{
+		"alice": {Password: "hash", Groups: []string{"admins"}},
+		"bob":   {Password: "hash", Groups: []string{"admins", "family"}},
+	}
+	result := resolveAllowed([]string{"admins"}, users)
+	if len(result) != 2 {
+		t.Errorf("expected 2 users for 'admins' group, got %d: %v", len(result), result)
+	}
+	if !slices.Contains(result, "alice") || !slices.Contains(result, "bob") {
+		t.Errorf("expected alice and bob, got %v", result)
+	}
+}
+
+func TestResolveAllowed_DirectUsername(t *testing.T) {
+	users := map[string]*UserConfig{
+		"guest": {Password: "hash"},
+	}
+	result := resolveAllowed([]string{"guest"}, users)
+	if len(result) != 1 || result[0] != "guest" {
+		t.Errorf("expected [guest], got %v", result)
+	}
+}
+
+func TestResolveAllowed_NonexistentGroup(t *testing.T) {
+	users := map[string]*UserConfig{
+		"alice": {Password: "hash", Groups: []string{"admins"}},
+	}
+	result := resolveAllowed([]string{"nonexistent-group"}, users)
+	if result != nil {
+		t.Errorf("expected nil for group resolving to zero users, got %v", result)
+	}
+}
+
+func TestResolveAllowed_UsernameGroupCollision(t *testing.T) {
+	// When a name exists as both a username and a group name, both should be resolved.
+	users := map[string]*UserConfig{
+		"admins": {Password: "hash", Groups: []string{}},         // user named "admins"
+		"alice":  {Password: "hash", Groups: []string{"admins"}}, // alice is in the "admins" group
+	}
+	result := resolveAllowed([]string{"admins"}, users)
+	if len(result) != 2 {
+		t.Errorf("expected 2 users for username/group collision, got %d: %v", len(result), result)
+	}
+	if !slices.Contains(result, "admins") {
+		t.Errorf("expected 'admins' (direct user) in result, got %v", result)
+	}
+	if !slices.Contains(result, "alice") {
+		t.Errorf("expected 'alice' (group member) in result, got %v", result)
 	}
 }

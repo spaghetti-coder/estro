@@ -537,7 +537,7 @@ func TestRunServiceForbidden(t *testing.T) {
 	cfg := loadTestConfig(t)
 	services := cfg.Flatten()
 	for i, svc := range services {
-		if !svc.IsAccessible("guest", cfg.Users) {
+		if !svc.IsAccessible("guest") {
 			restrictedIndex = i
 			break
 		}

@@ -1,7 +1,5 @@
 package config
 
-import "slices"
-
 // FlatService holds a service with its section and global fallbacks resolved
 // into a single flat struct. All cascading fields are pre-resolved in Flatten().
 type FlatService struct {
@@ -13,7 +11,7 @@ type FlatService struct {
 	Confirm       bool
 	Enabled       bool
 	Restricted    bool
-	Allowed       StringList // nil = public
+	Allowed       []string   // nil = public
 	Remote        StringList // nil = inherit/cascade, [] = explicit local
 	RemoteSSHOpts StringList // nil = unset
 
@@ -73,7 +71,7 @@ func (c *Config) Flatten() []FlatService {
 				Confirm:            cascade(svc.Confirm, sec.Confirm, global.Confirm, defaultConfirm),
 				Enabled:            cascade(svc.Enabled, sec.Enabled, global.Enabled, true),
 				Restricted:         cascade(svc.Restricted, sec.Restricted, global.Restricted, true),
-				Allowed:            cascadeStringList(svc.Allowed, sec.Allowed, global.Allowed),
+				Allowed:            resolveAllowed(cascadeStringList(svc.Allowed, sec.Allowed, global.Allowed), c.Users),
 				Remote:             cascadeStringList(svc.Remote, sec.Remote, global.Remote),
 				RemoteSSHOpts:      cascadeStringList(svc.RemoteSSHOpts, sec.RemoteSSHOpts, global.RemoteSSHOpts),
 				SectionCollapsable: cascade(nil, lay.Collapsable, globalLayout.Collapsable, defaultCollapsable),
@@ -86,10 +84,9 @@ func (c *Config) Flatten() []FlatService {
 }
 
 // Serialize produces the JSON-ready representation of a service for the frontend,
-// resolving access control against the given username and user map.
-func (s *FlatService) Serialize(index int, username string, users map[string]*UserConfig) SerializedService {
-	allowedUsers := s.ResolveAllowed(users)
-	isPublic := allowedUsers == nil
+// resolving access control against the given username. ACL is pre-resolved during Flatten().
+func (s *FlatService) Serialize(index int, username string) SerializedService {
+	isPublic := s.Allowed == nil
 	sectionTitle := s.SectionTitle
 	return SerializedService{
 		ID:                 index,
@@ -100,9 +97,9 @@ func (s *FlatService) Serialize(index int, username string, users map[string]*Us
 		SectionCollapsable: s.SectionCollapsable,
 		SectionColumns:     s.SectionColumns,
 		Public:             isPublic,
-		Accessible:         isPublic || (username != "" && slices.Contains(allowedUsers, username)),
+		Accessible:         s.IsAccessible(username),
 		Enabled:            s.Enabled,
-		AllowedUsers:       allowedUsers,
+		AllowedUsers:       s.Allowed,
 		Restricted:         s.Restricted,
 	}
 }
