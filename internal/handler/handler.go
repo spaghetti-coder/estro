@@ -99,14 +99,8 @@ func (h *Handler) getMe(c *echo.Context) error {
 	if username == "" {
 		return c.JSON(http.StatusOK, nil)
 	}
-	user, ok := h.cfg.Users[username]
-	groups := []string{}
-	if ok && user.Groups != nil {
-		groups = user.Groups
-	}
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]string{
 		"username": username,
-		"groups":   groups,
 	})
 }
 
@@ -118,9 +112,6 @@ func (h *Handler) login(c *echo.Context) error {
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
-	}
-	if body.Username == "" || body.Password == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Username and password required"})
 	}
 	if auth.Authenticate(h.cfg.Users, body.Username, body.Password) == nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid username or password"})

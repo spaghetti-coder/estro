@@ -281,12 +281,6 @@ func TestGetMeAfterLogin(t *testing.T) {
 	if result["username"] != "alice" {
 		t.Errorf("expected username 'alice', got %v", result["username"])
 	}
-	groups, ok := result["groups"].([]interface{})
-	if !ok {
-		t.Errorf("expected groups array, got %v", result["groups"])
-	} else if len(groups) != 1 || groups[0] != "admins" {
-		t.Errorf("expected groups [admins], got %v", groups)
-	}
 }
 
 func TestLoginValidCredentials(t *testing.T) {
@@ -322,20 +316,6 @@ func TestLoginInvalidPassword(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestLoginEmptyUsername(t *testing.T) {
-	e, _, _, _ := setupTestEnv(t)
-
-	body := `{"username":"","password":"test"}`
-	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
 	}
 }
 

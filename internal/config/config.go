@@ -25,20 +25,6 @@ const (
 	defaultColumns     = 3
 )
 
-// validate is a package-level singleton validator instance to avoid
-// repeated allocation on every Load() call.
-var validate = func() *validator.Validate {
-	v := validator.New()
-	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
-		name := strings.SplitN(fld.Tag.Get("yaml"), ",", 2)[0]
-		if name == "-" || name == "" {
-			return fld.Name
-		}
-		return name
-	})
-	return v
-}()
-
 // Config represents the top-level Estro configuration loaded from YAML.
 type Config struct {
 	Global   *GlobalConfig          `yaml:"global,omitempty" validate:"omitempty"`
@@ -77,6 +63,20 @@ type ServiceConfig struct {
 	Command       CommandValue `yaml:"command" validate:"required"`
 	CascadeFields `yaml:",inline"`
 }
+
+// validate is a package-level singleton validator instance to avoid
+// repeated allocation on every Load() call.
+var validate = func() *validator.Validate {
+	v := validator.New()
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		name := strings.SplitN(fld.Tag.Get("yaml"), ",", 2)[0]
+		if name == "-" || name == "" {
+			return fld.Name
+		}
+		return name
+	})
+	return v
+}()
 
 // coalesce returns the value pointed to by ptr, or the provided fallback if ptr is nil.
 func coalesce[T any](ptr *T, fallback T) T {

@@ -80,8 +80,6 @@ func main() {
 		e.StaticFS("/", subFS)
 	}
 
-	addr := cfg.GetGlobal().Addr()
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -92,6 +90,7 @@ func main() {
 		jobStore.MarkAllRunningAsError("server shutting down")
 	}()
 
+	addr := cfg.GetGlobal().Addr()
 	slog.Info("Estro listening", "address", "http://"+addr)
 	sc := echo.StartConfig{
 		Address:         addr,

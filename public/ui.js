@@ -40,7 +40,7 @@
   let authAreaEl, gearBtn, gearPanel, disabledToggle;
   let loginModal;
   let userFilterEl, userSelectEl, loginPasswordEl, rememberMeEl, loginErrorEl, loginSubmitEl;
-  let currentUser = null;   // {username, groups} | null
+  let currentUser = null;   // {username} | null
   let loginForUsers = null; // string[] | null — pre-filter when triggered from a service click
   let allUsernames = [];    // union of all allowedUsers across services
 
@@ -204,7 +204,7 @@
   }
 
   function onLoginSuccess(data) {
-    currentUser = { username: data.username, groups: [] };
+    currentUser = { username: data.username };
     closeLoginModal();
     refreshAuth();
   }
@@ -218,8 +218,6 @@
   async function handleLogin() {
     const username = userSelectEl.value;
     const password = loginPasswordEl.value;
-    if (!username) { loginErrorEl.textContent = 'Please select a user.'; return; }
-    if (!password) { loginErrorEl.textContent = 'Please enter a password.'; return; }
     loginSubmitEl.disabled = true;
     loginErrorEl.textContent = '';
     try {
