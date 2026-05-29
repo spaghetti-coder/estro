@@ -12,7 +12,9 @@ import (
 	"github.com/spaghetti-coder/estro/internal/config"
 )
 
-// ShellEscape wraps a shell command in single quotes, escaping any embedded single quotes.
+// ShellEscape escapes embedded single quotes so cmd can be safely placed inside
+// a single-quoted shell string. The surrounding quotes are added by the caller
+// (see BuildCmd).
 func ShellEscape(cmd string) string {
 	return strings.ReplaceAll(cmd, "'", "'\\''")
 }

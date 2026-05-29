@@ -187,7 +187,10 @@ func (h *Handler) executeAsync(jobID string, svc config.FlatService, cmd string)
 	status := job.StatusDone
 	if cmdErr != nil {
 		status = job.StatusError
-		if stderr != "" {
+		// Surface the command's own stderr when it produced any; otherwise fall
+		// back to the Go execution error (e.g. "exit status 1") so the failure
+		// is never reported with an empty message.
+		if stderr == "" {
 			stderr = cmdErr.Error()
 		}
 	}

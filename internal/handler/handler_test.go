@@ -740,3 +740,50 @@ func findSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 	}
 	return nil
 }
+
+func TestExecuteAsyncStderr(t *testing.T) {
+	tests := []struct {
+		name       string
+		cmd        string
+		wantStatus string
+		wantStderr string
+	}{
+		{
+			name:       "failure with stderr keeps the real stderr",
+			cmd:        "echo boom >&2; exit 1",
+			wantStatus: job.StatusError,
+			wantStderr: "boom",
+		},
+		{
+			name:       "failure without stderr falls back to the error",
+			cmd:        "exit 3",
+			wantStatus: job.StatusError,
+			wantStderr: "exit status 3",
+		},
+		{
+			name:       "success has empty stderr",
+			cmd:        "echo ok",
+			wantStatus: job.StatusDone,
+			wantStderr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &Handler{jobs: job.NewStore(), cmdCtx: context.Background()}
+			svc := config.FlatService{Title: "svc", Timeout: 5}
+			h.executeAsync("jid", svc, tt.cmd)
+
+			j, ok := h.jobs.Get("jid")
+			if !ok {
+				t.Fatal("job not stored")
+			}
+			if j.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", j.Status, tt.wantStatus)
+			}
+			if j.Stderr != tt.wantStderr {
+				t.Errorf("stderr = %q, want %q", j.Stderr, tt.wantStderr)
+			}
+		})
+	}
+}
