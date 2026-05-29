@@ -28,24 +28,6 @@ func TestShellEscape(t *testing.T) {
 	}
 }
 
-func TestValidateHostAccepts(t *testing.T) {
-	hosts := []string{"server1.local", "user@host", "192.168.1.1", "host:22", "my-server.local"}
-	for _, h := range hosts {
-		if err := ValidateHost(h); err != nil {
-			t.Errorf("ValidateHost(%q) returned unexpected error: %v", h, err)
-		}
-	}
-}
-
-func TestValidateHostRejects(t *testing.T) {
-	hosts := []string{"host with space", "host;rm -rf", "host|pipe", "host`cmd`", "host$(cmd)"}
-	for _, h := range hosts {
-		if err := ValidateHost(h); err == nil {
-			t.Errorf("ValidateHost(%q) expected error, got nil", h)
-		}
-	}
-}
-
 func TestBuildCmdNoRemote(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
 	result, err := BuildCmd(cmd, nil, "")
@@ -95,12 +77,55 @@ func TestBuildCmdArrayCommand(t *testing.T) {
 	}
 }
 
-func TestBuildCmdInvalidHost(t *testing.T) {
+func TestBuildCmdRemoteWithPort(t *testing.T) {
 	cmd := config.CommandValue{"uptime"}
-	remote := config.StringList{"host with space"}
-	_, err := BuildCmd(cmd, remote, "-o StrictHostKeyChecking=no")
-	if err == nil {
-		t.Error("expected error for invalid host, got nil")
+	remote := config.StringList{"server1.local:2222"}
+	result, err := BuildCmd(cmd, remote, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "ssh -p 2222 server1.local 'uptime'"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestBuildCmdRemoteUserHostPort(t *testing.T) {
+	cmd := config.CommandValue{"uptime"}
+	remote := config.StringList{"deploy@10.0.0.5:2222"}
+	result, err := BuildCmd(cmd, remote, "-o StrictHostKeyChecking=no")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "ssh -o StrictHostKeyChecking=no -p 2222 deploy@10.0.0.5 'uptime'"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestBuildCmdRemoteIPv6Port(t *testing.T) {
+	cmd := config.CommandValue{"uptime"}
+	remote := config.StringList{"[2001:db8::1]:2222"}
+	result, err := BuildCmd(cmd, remote, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "ssh -p 2222 2001:db8::1 'uptime'"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestBuildCmdMultiHopMixedPorts(t *testing.T) {
+	cmd := config.CommandValue{"uptime"}
+	remote := config.StringList{"hop1.local:2222", "target:2223"}
+	result, err := BuildCmd(cmd, remote, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "ssh -p 2222 hop1.local 'ssh -p 2223 target '\\''uptime'\\'''"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
 	}
 }
 

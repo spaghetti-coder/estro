@@ -21,7 +21,7 @@ type CascadeFields struct {
 	Timeout       *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
 	Confirm       *bool      `yaml:"confirm,omitempty"`
 	Allowed       StringList `yaml:"allowed,omitempty"`
-	Remote        StringList `yaml:"remote,omitempty"`
+	Remote        StringList `yaml:"remote,omitempty" validate:"omitempty,dive,remote_host"`
 	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty"`
 	Enabled       *bool      `yaml:"enabled,omitempty"`
 	Restricted    *bool      `yaml:"restricted,omitempty"`

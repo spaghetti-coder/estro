@@ -78,6 +78,12 @@ var validate = func() *validator.Validate {
 	return v
 }()
 
+func init() {
+	if err := validate.RegisterValidation("remote_host", validateRemoteHost); err != nil {
+		panic(err)
+	}
+}
+
 // coalesce returns the value pointed to by ptr, or the provided fallback if ptr is nil.
 func coalesce[T any](ptr *T, fallback T) T {
 	if ptr != nil {

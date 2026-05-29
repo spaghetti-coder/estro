@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -18,36 +17,29 @@ func ShellEscape(cmd string) string {
 	return strings.ReplaceAll(cmd, "'", "'\\''")
 }
 
-var hostRegex = regexp.MustCompile(`^[a-zA-Z0-9._@:/-]+$`)
-
-// ValidateHost checks that a hostname contains only permitted characters
-// for use in SSH connection strings.
-func ValidateHost(host string) error {
-	if !hostRegex.MatchString(host) {
-		return fmt.Errorf("invalid remote host: %s", host)
-	}
-	return nil
-}
-
 // BuildCmd constructs the final shell command string, wrapping it in nested
-// SSH sessions when a remote chain is specified. The sshOpts parameter is
-// the space-separated SSH options string (e.g. "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null").
+// SSH sessions when a remote chain is specified. Each hop is a validated
+// "[user@]host[:port]" entry; a port is rendered as an "ssh -p <port>" option.
+// The sshOpts parameter is the space-separated SSH options string (e.g.
+// "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null").
 func BuildCmd(command config.CommandValue, remote config.StringList, sshOpts string) (string, error) {
 	cmd := strings.Join(command, " && ")
 	if len(remote) == 0 {
 		return cmd, nil
 	}
-	for _, h := range remote {
-		if err := ValidateHost(h); err != nil {
+	for i := len(remote) - 1; i >= 0; i-- {
+		rh, err := config.SplitRemoteHost(remote[i])
+		if err != nil {
 			return "", err
 		}
-	}
-	sshPart := "ssh"
-	if sshOpts != "" {
-		sshPart = "ssh " + sshOpts
-	}
-	for i := len(remote) - 1; i >= 0; i-- {
-		cmd = fmt.Sprintf("%s %s '%s'", sshPart, remote[i], ShellEscape(cmd))
+		sshPart := "ssh"
+		if sshOpts != "" {
+			sshPart += " " + sshOpts
+		}
+		if rh.Port != "" {
+			sshPart += " -p " + rh.Port
+		}
+		cmd = fmt.Sprintf("%s %s '%s'", sshPart, rh.Target(), ShellEscape(cmd))
 	}
 	return cmd, nil
 }
