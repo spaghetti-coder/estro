@@ -82,7 +82,7 @@ func TestSerializeService(t *testing.T) {
 			if serialized.Confirm != svc.Confirm {
 				t.Errorf("%s: expected confirm %v, got %v", wantTitle, svc.Confirm, serialized.Confirm)
 			}
-			if serialized.Section == nil || *serialized.Section != svc.SectionTitle {
+			if serialized.Section != svc.SectionTitle {
 				t.Errorf("%s: expected section %s, got %v", wantTitle, svc.SectionTitle, serialized.Section)
 			}
 		}

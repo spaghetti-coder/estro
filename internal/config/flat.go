@@ -28,7 +28,7 @@ type SerializedService struct {
 	Title              string   `json:"title"`
 	Timeout            int      `json:"timeout"`
 	Confirm            bool     `json:"confirm"`
-	Section            *string  `json:"section"`
+	Section            string   `json:"section"`
 	SectionCollapsable bool     `json:"sectionCollapsable"`
 	SectionColumns     int      `json:"sectionColumns"`
 	Public             bool     `json:"public"`
@@ -74,8 +74,8 @@ func (c *Config) Flatten() []FlatService {
 				Allowed:            resolveAllowed(cascadeStringList(svc.Allowed, sec.Allowed, global.Allowed), c.Users),
 				Remote:             cascadeStringList(svc.Remote, sec.Remote, global.Remote),
 				RemoteSSHOpts:      cascadeStringList(svc.RemoteSSHOpts, sec.RemoteSSHOpts, global.RemoteSSHOpts),
-				SectionCollapsable: cascade(nil, lay.Collapsable, globalLayout.Collapsable, defaultCollapsable),
-				SectionColumns:     cascade(nil, lay.Columns, globalLayout.Columns, defaultColumns),
+				SectionCollapsable: cascadeLayout(lay.Collapsable, globalLayout.Collapsable, defaultCollapsable),
+				SectionColumns:     cascadeLayout(lay.Columns, globalLayout.Columns, defaultColumns),
 				SectionTitle:       section.Title,
 			})
 		}
@@ -87,13 +87,12 @@ func (c *Config) Flatten() []FlatService {
 // resolving access control against the given username. ACL is pre-resolved during Flatten().
 func (s *FlatService) Serialize(index int, username string) SerializedService {
 	isPublic := s.Allowed == nil
-	sectionTitle := s.SectionTitle
 	return SerializedService{
 		ID:                 index,
 		Title:              s.Title,
 		Timeout:            s.Timeout*1000 + clientTimeoutBuffer,
 		Confirm:            s.Confirm,
-		Section:            &sectionTitle,
+		Section:            s.SectionTitle,
 		SectionCollapsable: s.SectionCollapsable,
 		SectionColumns:     s.SectionColumns,
 		Public:             isPublic,

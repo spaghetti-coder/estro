@@ -94,6 +94,12 @@ func cascade[T any](svc, sec, global *T, defaultVal T) T {
 	return defaultVal
 }
 
+// cascadeLayout resolves a layout field that cascades section → global only
+// (there is no service level), falling back to defaultVal.
+func cascadeLayout[T any](sec, global *T, defaultVal T) T {
+	return cascade(nil, sec, global, defaultVal)
+}
+
 func cascadeStringList(svc, sec, global StringList) StringList {
 	if svc != nil {
 		return svc

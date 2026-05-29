@@ -84,12 +84,10 @@ func init() {
 	}
 }
 
-// coalesce returns the value pointed to by ptr, or the provided fallback if ptr is nil.
+// coalesce returns the value pointed to by ptr, or the provided fallback if ptr
+// is nil. It is the single-level case of cascade.
 func coalesce[T any](ptr *T, fallback T) T {
-	if ptr != nil {
-		return *ptr
-	}
-	return fallback
+	return cascade(ptr, nil, nil, fallback)
 }
 
 // Addr returns the host:port address string for the server to listen on,
