@@ -64,7 +64,6 @@ func main() {
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
 	e.Use(appMiddleware.FaviconCORS())
-	e.Use(auth.SessionMiddleware(sessionStore))
 	e.Use(middleware.RequestLogger())
 
 	h.RegisterRoutes(e)

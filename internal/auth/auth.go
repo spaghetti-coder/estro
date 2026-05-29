@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gorilla/sessions"
-	"github.com/labstack/echo/v5"
 	"github.com/spaghetti-coder/estro/internal/config"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -56,14 +55,14 @@ func HashPassword(plainPassword string) (string, error) {
 
 // GetSessionUser retrieves the authenticated username from the session cookie.
 // Returns an empty string if no user is logged in.
-func GetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter) (string, error) {
+func GetSessionUser(store sessions.Store, r *http.Request) string {
 	// Error ignored: Get() returns a valid session even on decode errors.
 	session, _ := store.Get(r, SessionCookieName)
 	username, ok := session.Values["user"].(string)
 	if !ok || username == "" {
-		return "", nil
+		return ""
 	}
-	return username, nil
+	return username
 }
 
 // SetSessionUser stores the username in the session cookie.
@@ -93,17 +92,6 @@ func GenerateSessionSecret() ([]byte, error) {
 // the provided secret.
 func NewSessionStore(secret []byte) sessions.Store {
 	return sessions.NewCookieStore(secret)
-}
-
-// SessionMiddleware injects the session store into the echo context so
-// that handlers can retrieve it via c.Get("_session_store").
-func SessionMiddleware(store sessions.Store) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			c.Set("_session_store", store)
-			return next(c)
-		}
-	}
 }
 
 // DestroySession clears the session cookie and expires it immediately.

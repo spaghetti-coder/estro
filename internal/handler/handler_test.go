@@ -122,7 +122,6 @@ func setupTestEnvWithConfig(t *testing.T, yamlContent string) (*echo.Echo, *Hand
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
 	e.Use(appMiddleware.FaviconCORS())
-	e.Use(auth.SessionMiddleware(sessionStore))
 	e.Use(echoMiddleware.RequestLogger())
 	h.RegisterRoutes(e)
 

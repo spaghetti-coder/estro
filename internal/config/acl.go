@@ -38,3 +38,9 @@ func (s *FlatService) IsAccessible(username string) bool {
 	}
 	return username != "" && slices.Contains(s.Allowed, username)
 }
+
+// IsHidden reports whether the service must be omitted entirely for the given
+// username: it is restricted and the user cannot access it.
+func (s *FlatService) IsHidden(username string) bool {
+	return s.Restricted && !s.IsAccessible(username)
+}

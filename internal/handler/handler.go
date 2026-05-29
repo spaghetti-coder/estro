@@ -19,7 +19,7 @@ import (
 
 const (
 	jobTTL             = 10 * time.Minute
-	loginRateLimitRate = 0.011111111111111112 // ~1 request per 90s
+	loginRateLimitRate = 1.0 / 90.0 // ~1 request per 90s
 )
 
 // Handler holds shared dependencies for all HTTP route handlers.
@@ -28,7 +28,9 @@ type Handler struct {
 	jobs         *job.Store
 	sessionStore sessions.Store
 	services     []config.FlatService
-	cmdCtx       context.Context
+	// cmdCtx is the application-lifecycle context, cancelled on server shutdown
+	// (not request-scoped); it bounds async command execution.
+	cmdCtx context.Context
 }
 
 // NewHandler creates a Handler with the provided dependencies.
@@ -40,6 +42,16 @@ func NewHandler(cfg *config.Config, jobStore *job.Store, sessionStore sessions.S
 		services:     cfg.Flatten(),
 		cmdCtx:       cmdCtx,
 	}
+}
+
+// errJSON writes a JSON error response with the given status code and message.
+func errJSON(c *echo.Context, status int, msg string) error {
+	return c.JSON(status, map[string]string{"error": msg})
+}
+
+// tooManyLogins is the shared response for login rate-limit rejections.
+func tooManyLogins(c *echo.Context) error {
+	return errJSON(c, http.StatusTooManyRequests, "Too many login attempts")
 }
 
 // RegisterRoutes registers all HTTP routes on the given Echo instance.
@@ -57,10 +69,10 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 			return c.RealIP(), nil
 		},
 		ErrorHandler: func(c *echo.Context, err error) error {
-			return c.JSON(http.StatusTooManyRequests, map[string]string{"error": "Too many login attempts"})
+			return tooManyLogins(c)
 		},
 		DenyHandler: func(c *echo.Context, identifier string, err error) error {
-			return c.JSON(http.StatusTooManyRequests, map[string]string{"error": "Too many login attempts"})
+			return tooManyLogins(c)
 		},
 	})
 
@@ -83,10 +95,10 @@ func (h *Handler) getConfig(c *echo.Context) error {
 }
 
 func (h *Handler) listServices(c *echo.Context) error {
-	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
+	username := auth.GetSessionUser(h.sessionStore, c.Request())
 	var result []config.SerializedService
 	for i, svc := range h.services {
-		if svc.Restricted && !svc.IsAccessible(username) {
+		if svc.IsHidden(username) {
 			continue
 		}
 		result = append(result, svc.Serialize(i, username))
@@ -95,7 +107,7 @@ func (h *Handler) listServices(c *echo.Context) error {
 }
 
 func (h *Handler) getMe(c *echo.Context) error {
-	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
+	username := auth.GetSessionUser(h.sessionStore, c.Request())
 	if username == "" {
 		return c.JSON(http.StatusOK, nil)
 	}
@@ -111,10 +123,10 @@ func (h *Handler) login(c *echo.Context) error {
 		RememberMe bool   `json:"rememberMe"`
 	}
 	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+		return errJSON(c, http.StatusBadRequest, "Invalid request")
 	}
 	if auth.Authenticate(h.cfg.Users, body.Username, body.Password) == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid username or password"})
+		return errJSON(c, http.StatusUnauthorized, "Invalid username or password")
 	}
 	if err := auth.SetSessionUser(h.sessionStore, c.Request(), c.Response(), body.Username, body.RememberMe); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to save session")
@@ -130,33 +142,32 @@ func (h *Handler) logout(c *echo.Context) error {
 func (h *Handler) runService(c *echo.Context) error {
 	svcIndex, err := strconv.Atoi(c.Param("svc"))
 	if err != nil || svcIndex < 0 || svcIndex >= len(h.services) {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Unknown service"})
+		return errJSON(c, http.StatusNotFound, "Unknown service")
 	}
 
 	svc := h.services[svcIndex]
 
 	if !svc.Enabled {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Service disabled"})
+		return errJSON(c, http.StatusForbidden, "Service disabled")
 	}
 
-	username, _ := auth.GetSessionUser(h.sessionStore, c.Request(), c.Response())
-	accessible := svc.IsAccessible(username)
-	if svc.Restricted && !accessible {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Unknown service"})
+	username := auth.GetSessionUser(h.sessionStore, c.Request())
+	if svc.IsHidden(username) {
+		return errJSON(c, http.StatusNotFound, "Unknown service")
 	}
-	if !accessible {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	if !svc.IsAccessible(username) {
+		return errJSON(c, http.StatusForbidden, "Forbidden")
 	}
 
 	sshOpts := strings.Join(svc.RemoteSSHOpts, " ")
 	cmd, err := exec.BuildCmd(svc.Command, svc.Remote, sshOpts)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return errJSON(c, http.StatusBadRequest, err.Error())
 	}
 
 	jobID, err := job.GenerateID()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate job ID"})
+		return errJSON(c, http.StatusInternalServerError, "Failed to generate job ID")
 	}
 	h.jobs.Set(jobID, &job.Job{Status: job.StatusRunning, Title: svc.Title})
 
@@ -193,7 +204,7 @@ func (h *Handler) getJob(c *echo.Context) error {
 	id := c.Param("id")
 	j, ok := h.jobs.Get(id)
 	if !ok {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Unknown job"})
+		return errJSON(c, http.StatusNotFound, "Unknown job")
 	}
 	return c.JSON(http.StatusOK, j)
 }

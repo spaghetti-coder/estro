@@ -18,11 +18,7 @@ func init() {
 func TestGetSessionUserNotAuthenticated(t *testing.T) {
 	store := sessions.NewCookieStore([]byte("test-secret"))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	username, err := GetSessionUser(store, req, rec)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	username := GetSessionUser(store, req)
 	if username != "" {
 		t.Errorf("expected empty username for unauthenticated session, got %q", username)
 	}
@@ -37,11 +33,7 @@ func TestSetAndGetSessionUser(t *testing.T) {
 	}
 	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
 	req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
-	rec2 := httptest.NewRecorder()
-	username, err := GetSessionUser(store, req2, rec2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	username := GetSessionUser(store, req2)
 	if username != "alice" {
 		t.Errorf("expected username %q, got %q", "alice", username)
 	}
@@ -186,11 +178,7 @@ func TestDestroySession(t *testing.T) {
 	for _, c := range cookies {
 		req3.AddCookie(c)
 	}
-	rec3 := httptest.NewRecorder()
-	username, err := GetSessionUser(store, req3, rec3)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	username := GetSessionUser(store, req3)
 	if username != "" {
 		t.Errorf("expected empty username after session destruction, got %q", username)
 	}
