@@ -30,7 +30,7 @@
     return suffix ? `${prefix} ${span}: ${escapeHTML(suffix)}` : `${prefix} ${span}`;
   }
 
-  let body, checkbox, knob;
+  let checkbox, knob;
   let toastsEl, toastTpl;
   let modal, modalPanel, modalTitle;
   let logsModalEl, logsModalPanel, logsStdoutEl, logsStderrEl, logsTabBtns;
@@ -339,20 +339,18 @@
     header.className = 'section-header';
     header.setAttribute('aria-expanded', String(expanded));
 
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'section-title';
+    titleSpan.textContent = title;
+
     if (!collapsable) {
       header.classList.add('section-header--pinned');
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'section-title';
-      titleSpan.textContent = title;
       header.appendChild(titleSpan);
     } else {
       const chevron = document.createElement('span');
       chevron.className = 'section-chevron';
       chevron.setAttribute('aria-hidden', 'true');
       chevron.textContent = '▶';
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'section-title';
-      titleSpan.textContent = title;
       header.append(chevron, titleSpan);
       header.addEventListener('click', () => {
         toggleSection(header, sectionBody, title, header.getAttribute('aria-expanded') !== 'true');
@@ -421,7 +419,6 @@
   function groupServicesBySection(services, showDisabled) {
     const sectionOrder = [];
     const sectionMap = {};
-    const sectionMeta = {};
     const sectionsAllDisabled = {};
     services.forEach((svc) => {
       if (!svc.enabled && !showDisabled) return;
@@ -430,8 +427,10 @@
       if (!sectionMap[key]) {
         sectionMap[key] = [];
         sectionOrder.push(key);
-        sectionMeta[key] = { collapsable: svc.sectionCollapsable, columns: svc.sectionColumns };
-        sectionsAllDisabled[key] = { meta: sectionMeta[key], allDisabled: true };
+        sectionsAllDisabled[key] = {
+          meta: { collapsable: svc.sectionCollapsable, columns: svc.sectionColumns },
+          allDisabled: true,
+        };
       }
       sectionMap[key].push(btn);
       if (svc.enabled) {
@@ -615,7 +614,6 @@
   // --- Init ---
 
   function init() {
-    body     = document.body;
     checkbox = document.getElementById('themeToggle');
     knob     = document.querySelector('.theme-toggle .knob');
     toastsEl = document.getElementById('toasts');
