@@ -2,87 +2,12 @@ package config
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v4"
 )
-
-func TestExtraCapturesUnknownKeys(t *testing.T) {
-	src := `
-x-anchor: &a
-  timeout: 5
-  hstnm: bad
-global:
-  <<: *a
-  hostname: 0.0.0.0
-  titl: oops
-sektions: 1
-`
-	var c Config
-	if err := yaml.Load([]byte(src), &c); err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if _, ok := c.Extra["sektions"]; !ok {
-		t.Error("expected top-level 'sektions' captured in Config.Extra")
-	}
-	if _, ok := c.Extra["x-anchor"]; !ok {
-		t.Error("expected 'x-anchor' captured in Config.Extra")
-	}
-	if c.Global == nil {
-		t.Fatal("global nil")
-	}
-	if _, ok := c.Global.Extra["titl"]; !ok {
-		t.Error("expected 'titl' captured in Global.Extra")
-	}
-	if _, ok := c.Global.Extra["hstnm"]; !ok {
-		t.Error("expected merged-in 'hstnm' captured in Global.Extra")
-	}
-}
-
-func TestExtraCapturesUnknownKeysDeep(t *testing.T) {
-	src := `
-users:
-  alice:
-    password: x
-    pasword: typo
-sections:
-  - title: S
-    sektion_typo: 1
-    services:
-      - title: T
-        command: echo
-        comand: typo
-`
-	var c Config
-	if err := yaml.Load([]byte(src), &c); err != nil {
-		t.Fatalf("load: %v", err)
-	}
-
-	alice, ok := c.Users["alice"]
-	if !ok || alice == nil {
-		t.Fatal("expected users[alice] to be present")
-	}
-	if _, ok := alice.Extra["pasword"]; !ok {
-		t.Error("expected 'pasword' typo captured in users[alice].Extra")
-	}
-
-	if len(c.Sections) == 0 {
-		t.Fatal("expected at least one section")
-	}
-	sec := c.Sections[0]
-	if _, ok := sec.Extra["sektion_typo"]; !ok {
-		t.Error("expected 'sektion_typo' captured in sections[0].Extra")
-	}
-
-	if len(sec.Services) == 0 {
-		t.Fatal("expected at least one service in sections[0]")
-	}
-	svc := sec.Services[0]
-	if _, ok := svc.Extra["comand"]; !ok {
-		t.Error("expected 'comand' typo captured in sections[0].services[0].Extra")
-	}
-}
 
 func TestAllowedRef(t *testing.T) {
 	users := map[string]*UserConfig{
@@ -145,29 +70,227 @@ func TestFormatPath(t *testing.T) {
 	}
 }
 
-func TestUnknownKeyIssues(t *testing.T) {
-	c := &Config{
-		Extra:  map[string]yaml.Node{"sektions": {}, "x-ok": {}},
-		Global: &GlobalConfig{Extra: map[string]yaml.Node{"titl": {}}},
-		Sections: []SectionConfig{{
-			Title:    "s",
-			Services: []ServiceConfig{{Title: "t", Extra: map[string]yaml.Node{"cmdd": {}}}},
-			Extra:    map[string]yaml.Node{"x-anchor": {}},
-		}},
+// TestInlineSegReDerivedFromEmbeds locks in that the embedded-struct segments
+// stripped by formatPath are derived from the schema, so renaming or adding an
+// embedded struct can't silently leave stale segments in issue paths.
+func TestInlineSegReDerivedFromEmbeds(t *testing.T) {
+	names := embeddedStructNames(reflect.TypeOf(Config{}), map[reflect.Type]bool{})
+	if len(names) == 0 {
+		t.Fatal("expected embedded structs (CascadeFields/LayoutFields) to be discovered")
 	}
-	got := dedupeSort(unknownKeyIssues(c))
-	want := []Issue{
-		{Path: "global.titl", Msg: "invalid field"},
-		{Path: "sections[0].services[0].cmdd", Msg: "invalid field"},
-		{Path: "sektions", Msg: "invalid field"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("got %d issues %v, want %d", len(got), got, len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("issue %d: got %+v want %+v", i, got[i], want[i])
+	for _, n := range names {
+		if !inlineSegRe.MatchString("." + n) {
+			t.Errorf("inlineSegRe does not strip embedded segment %q", n)
 		}
+	}
+	if got := formatPath("Config.global.CascadeFields.timeout"); got != "global.timeout" {
+		t.Errorf("formatPath = %q, want global.timeout", got)
+	}
+}
+
+// TestSchemaShapeCoverage fails if any config field has a type the shape walk
+// (checkFieldShape) does not explicitly handle, forcing a conscious update when
+// an exotic field type is added.
+func TestSchemaShapeCoverage(t *testing.T) {
+	scalarKinds := map[reflect.Kind]bool{
+		reflect.String: true, reflect.Bool: true,
+		reflect.Int: true, reflect.Int8: true, reflect.Int16: true, reflect.Int32: true, reflect.Int64: true,
+		reflect.Uint: true, reflect.Uint8: true, reflect.Uint16: true, reflect.Uint32: true, reflect.Uint64: true,
+		reflect.Float32: true, reflect.Float64: true,
+	}
+	custom := map[reflect.Type]bool{
+		reflect.TypeOf(StringList(nil)):   true,
+		reflect.TypeOf(CommandValue(nil)): true,
+	}
+	seen := map[reflect.Type]bool{}
+	var walk func(reflect.Type)
+	walk = func(typ reflect.Type) {
+		if seen[typ] {
+			return
+		}
+		seen[typ] = true
+		for _, f := range schemaFields(typ) {
+			ft := derefType(f.Type)
+			switch {
+			case custom[ft], scalarKinds[ft.Kind()]:
+				// leaf, handled
+			case ft.Kind() == reflect.Slice:
+				if et := derefType(ft.Elem()); et.Kind() == reflect.Struct {
+					walk(et)
+				}
+			case ft.Kind() == reflect.Map:
+				if vt := derefType(ft.Elem()); vt.Kind() == reflect.Struct {
+					walk(vt)
+				}
+			case ft.Kind() == reflect.Struct:
+				walk(ft)
+			default:
+				t.Errorf("field %q type %s (kind %s) not handled by checkFieldShape — extend it and this test", f.Name, f.Type, ft.Kind())
+			}
+		}
+	}
+	walk(reflect.TypeOf(Config{}))
+}
+
+// TestWrongTypeMergesToOneIssue pins that a wrong-typed field yields exactly one
+// issue (the shape "invalid value" subsumes any consequent validator "required"),
+// keeping the two passes' path formats in agreement.
+func TestWrongTypeMergesToOneIssue(t *testing.T) {
+	withSvc := "\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
+	tests := []struct{ name, src, path string }{
+		{"required slice given a map", "sections: {a: b}\n", "sections"},
+		{"global scalar given a map", "global:\n  port: {a: b}" + withSvc, "global.port"},
+		{"global stringlist given a map", "global:\n  allowed: {a: b}" + withSvc, "global.allowed"},
+		{"section cascade field given a map", "sections:\n  - title: S\n    timeout: {a: b}\n    services:\n      - title: T\n        command: echo\n", "sections[0].timeout"},
+		{"service field given a map", "sections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n        timeout: {a: b}\n", "sections[0].services[0].timeout"},
+		{"user map entry given a map", "users:\n  bob:\n    password: x\n    groups: {a: b}" + withSvc, "users.bob.groups"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTestConfig(t, tt.src)
+			defer func() { _ = os.Remove(path) }()
+			n := 0
+			for _, is := range Load(path).Issues {
+				if is.Path == tt.path {
+					n++
+				}
+			}
+			if n != 1 {
+				t.Errorf("expected exactly one issue at %q, got %d (all: %v)", tt.path, n, Load(path).IssueStrings())
+			}
+		})
+	}
+}
+
+// TestLoadPopulatesValidFieldsDespiteTypeError guards the intentionally-ignored
+// decode error in Load: a wrong-typed field must not stop valid sibling fields
+// from populating (so validateStruct still sees real values).
+func TestLoadPopulatesValidFieldsDespiteTypeError(t *testing.T) {
+	src := "global:\n  title: MyApp\n  port: {a: b}\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
+	path := writeTestConfig(t, src)
+	defer func() { _ = os.Remove(path) }()
+	g := Load(path).Config.Global
+	if g == nil || g.Title == nil || *g.Title != "MyApp" {
+		t.Fatalf("expected global.title=MyApp to populate despite a sibling type error, got %+v", g)
+	}
+}
+
+// TestUnknownKeyBehavior verifies that unknown YAML keys are detected by the
+// shape walk and reported as "invalid field" at every level, that x-* keys are
+// never reported, and that keys introduced via YAML merge (<<: *anchor) are
+// caught at the use site.
+func TestUnknownKeyBehavior(t *testing.T) {
+	tests := []struct {
+		name      string
+		src       string
+		wantPaths []string // paths that must carry "invalid field"
+		notPaths  []string // paths that must NOT appear
+	}{
+		{
+			name:      "top-level typo",
+			src:       "sektions: 1\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n",
+			wantPaths: []string{"sektions"},
+		},
+		{
+			name:      "global typo",
+			src:       "global:\n  titl: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n",
+			wantPaths: []string{"global.titl"},
+		},
+		{
+			name: "service typo",
+			src: `sections:
+  - title: S
+    services:
+      - title: T
+        command: echo
+        comand: typo
+`,
+			wantPaths: []string{"sections[0].services[0].comand"},
+		},
+		{
+			name: "user typo",
+			src: `users:
+  bob:
+    password: x
+    pasword: y
+sections:
+  - title: S
+    services:
+      - title: T
+        command: echo
+`,
+			wantPaths: []string{"users.bob.pasword"},
+		},
+		{
+			name: "bad key merged via anchor at global level",
+			src: `x-anchor: &a
+  hstnm: bad
+global:
+  <<: *a
+sections:
+  - title: S
+    services:
+      - title: T
+        command: echo
+`,
+			wantPaths: []string{"global.hstnm"},
+		},
+		{
+			name: "x-* keys are NOT reported",
+			src: `x-top: anything
+global:
+  x-note: ok
+sections:
+  - title: S
+    x-section: ok
+    services:
+      - title: T
+        command: echo
+        x-svc: ok
+`,
+			wantPaths: nil,
+			notPaths:  []string{"x-top", "global.x-note", "sections[0].x-section", "sections[0].services[0].x-svc"},
+		},
+		{
+			name: "section typo",
+			src: `sections:
+  - title: S
+    sektion_typo: 1
+    services:
+      - title: T
+        command: echo
+`,
+			wantPaths: []string{"sections[0].sektion_typo"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTestConfig(t, tt.src)
+			defer func() { _ = os.Remove(path) }()
+			res := Load(path)
+
+			for _, wantPath := range tt.wantPaths {
+				found := false
+				for _, is := range res.Issues {
+					if is.Path == wantPath && is.Msg == "invalid field" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected issue {Path:%q, Msg:\"invalid field\"}, got: %v", wantPath, res.Issues)
+				}
+			}
+
+			for _, notPath := range tt.notPaths {
+				for _, is := range res.Issues {
+					if is.Path == notPath {
+						t.Errorf("unexpected issue at %q: %v", notPath, is)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -466,40 +589,41 @@ func TestLoadTypeMismatchPortFallsBackTo3000(t *testing.T) {
 	}
 }
 
-func TestLoadTypeMismatchTopLevel(t *testing.T) {
-	path := writeTestConfig(t, "sections: 123\n") // sections present but wrong type
+func TestLoadWrongShapeTopLevel(t *testing.T) {
+	path := writeTestConfig(t, "sections: 123\n") // sections present but wrong shape
 	defer func() { _ = os.Remove(path) }()
 	res := Load(path)
 	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`sections` invalid type" {
-		t.Errorf("got %v, want [`sections` invalid type]", got)
+	if len(got) != 1 || got[0] != "`sections` invalid value" {
+		t.Errorf("got %v, want [`sections` invalid value]", got)
 	}
 }
 
-func TestLoadTypeMismatchNestedNoDuplicate(t *testing.T) {
-	// port wrong type; must be exactly one "invalid type" (not also "invalid value"/"required")
+func TestLoadWrongTypeScalarIsInvalidValue(t *testing.T) {
+	// port given a non-int scalar: exactly one "invalid value" (not also "required")
 	src := "global:\n  port: \"abc\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
 	path := writeTestConfig(t, src)
 	defer func() { _ = os.Remove(path) }()
 	res := Load(path)
 	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`global.port` invalid type" {
-		t.Errorf("got %v, want [`global.port` invalid type]", got)
+	if len(got) != 1 || got[0] != "`global.port` invalid value" {
+		t.Errorf("got %v, want [`global.port` invalid value]", got)
 	}
 }
 
 func TestDedupeSortPerPathPriority(t *testing.T) {
 	in := []Issue{
+		{Path: "global.port", Msg: "required"},
 		{Path: "global.port", Msg: "invalid value"},
-		{Path: "global.port", Msg: "invalid type"},
 		{Path: "sections", Msg: "required"},
 	}
 	got := dedupeSort(in)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 issues, got %v", got)
 	}
-	if got[0].Path != "global.port" || got[0].Msg != "invalid type" {
-		t.Errorf("got[0] = %+v, want {global.port invalid type}", got[0])
+	// global.port keeps "invalid value" (rank 0 < "required" rank 1).
+	if got[0].Path != "global.port" || got[0].Msg != "invalid value" {
+		t.Errorf("got[0] = %+v, want {global.port invalid value}", got[0])
 	}
 }
 
@@ -541,13 +665,65 @@ func TestLoadXStarAnchorMergeNoLeak(t *testing.T) {
 	}
 }
 
-func TestLoadHostnameWrongTypeIsInvalidTypeOnce(t *testing.T) {
+func TestLoadHostnameWrongShapeIsInvalidValueOnce(t *testing.T) {
 	src := "global:\n  hostname: [foobar]\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
 	path := writeTestConfig(t, src)
 	defer func() { _ = os.Remove(path) }()
 	res := Load(path)
 	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`global.hostname` invalid type" {
-		t.Errorf("got %v, want [`global.hostname` invalid type]", got)
+	if len(got) != 1 || got[0] != "`global.hostname` invalid value" {
+		t.Errorf("got %v, want [`global.hostname` invalid value]", got)
+	}
+}
+
+func shapeIssuesFromYAML(t *testing.T, src string) []string {
+	t.Helper()
+	var raw map[string]any
+	if err := yaml.Load([]byte(src), &raw); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var out []string
+	for _, is := range dedupeSort(shapeIssues(raw)) {
+		out = append(out, is.String())
+	}
+	return out
+}
+
+func TestShapeIssues(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{"sections wrong shape (scalar)", "sections: 123\n", []string{"`sections` invalid value"}},
+		{"subtitle map", "global:\n  subtitle: {a: b}\n", []string{"`global.subtitle` invalid value"}},
+		{"hostname list", "global:\n  hostname: [foobar]\n", []string{"`global.hostname` invalid value"}},
+		{"port scalar string is shape-OK", "global:\n  port: notanint\n", nil},
+		{"groups map", "users:\n  bob:\n    groups: {a: b}\n", []string{"`users.bob.groups` invalid value"}},
+		{"inline flow wrong title", "sections: [{title: [a], services: [{title: T, command: echo}]}]\n", []string{"`sections[0].title` invalid value"}},
+		{"x-* anchor merged, shape ok", "x-foo: &foo\n  timeout: fff\nglobal:\n  <<: *foo\n", nil},
+		{"allowed map", "global:\n  allowed: {alice: y}\n", []string{"`global.allowed` invalid value"}},
+		{"allowed empty list ok", "global:\n  allowed: []\n", nil},
+		{"remote list ok", "global:\n  remote: [h1]\n", nil},
+		{"global wrong shape", "global: 123\n", []string{"`global` invalid value"}},
+		{"null scalar ok", "global:\n  port:\n", nil},
+		{"valid config", "global:\n  port: 3000\nusers:\n  a:\n    password: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", nil},
+		// Unknown-key detection via shape walk.
+		{"top-level unknown key", "sektions: 1\n", []string{"`sektions` invalid field"}},
+		{"global unknown key", "global:\n  titl: x\n", []string{"`global.titl` invalid field"}},
+		{"x-* key not flagged", "x-top: 1\nglobal:\n  x-note: ok\n", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shapeIssuesFromYAML(t, tt.src)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("got[%d]=%q want %q (all: %v)", i, got[i], tt.want[i], got)
+				}
+			}
+		})
 	}
 }

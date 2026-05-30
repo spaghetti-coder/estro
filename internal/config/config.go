@@ -3,7 +3,6 @@ package config
 
 import (
 	"bytes"
-	"errors"
 	"maps"
 	"os"
 	"reflect"
@@ -27,42 +26,34 @@ const (
 
 // Config represents the top-level Estro configuration loaded from YAML.
 type Config struct {
-	Global   *GlobalConfig          `yaml:"global,omitempty" validate:"omitempty"`
-	Users    map[string]*UserConfig `yaml:"users,omitempty" validate:"omitempty,dive"`
-	Sections []SectionConfig        `yaml:"sections,omitempty" validate:"required,min=1,dive"`
-	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
-	Extra map[string]yaml.Node `yaml:",inline"`
+	Global   *GlobalConfig          `yaml:"global" validate:"omitempty"`
+	Users    map[string]*UserConfig `yaml:"users" validate:"omitempty,dive"`
+	Sections []SectionConfig        `yaml:"sections" validate:"required,min=1,dive"`
 }
 
 // GlobalConfig holds settings that apply across all sections and services.
 type GlobalConfig struct {
-	Title         *string `yaml:"title,omitempty"`
-	Subtitle      *string `yaml:"subtitle,omitempty"`
-	Hostname      *string `yaml:"hostname,omitempty" validate:"omitempty,hostname_rfc1123|ip"`
-	Port          *int    `yaml:"port,omitempty" validate:"omitempty,gte=1,lte=65535"`
-	Secret        *string `yaml:"secret,omitempty"`
+	Title         *string `yaml:"title"`
+	Subtitle      *string `yaml:"subtitle"`
+	Hostname      *string `yaml:"hostname" validate:"omitempty,hostname_rfc1123|ip"`
+	Port          *int    `yaml:"port" validate:"omitempty,gte=1,lte=65535"`
+	Secret        *string `yaml:"secret"`
 	CascadeFields `yaml:",inline"`
 	LayoutFields  `yaml:",inline"`
-	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
-	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // UserConfig defines a single user's credentials and group memberships.
 type UserConfig struct {
 	Password string     `yaml:"password" validate:"required"`
-	Groups   StringList `yaml:"groups,omitempty" validate:"omitempty,dive,required"`
-	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
-	Extra map[string]yaml.Node `yaml:",inline"`
+	Groups   StringList `yaml:"groups" validate:"omitempty,dive,required"`
 }
 
 // SectionConfig groups services under a common heading in the UI.
 type SectionConfig struct {
 	Title         string          `yaml:"title" validate:"required"`
-	Services      []ServiceConfig `yaml:"services,omitempty" validate:"required,min=1,dive"`
+	Services      []ServiceConfig `yaml:"services" validate:"required,min=1,dive"`
 	CascadeFields `yaml:",inline"`
 	LayoutFields  `yaml:",inline"`
-	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
-	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // ServiceConfig defines a single runnable command exposed in the UI.
@@ -70,8 +61,6 @@ type ServiceConfig struct {
 	Title         string       `yaml:"title" validate:"required"`
 	Command       CommandValue `yaml:"command" validate:"required,min=1,dive,required"`
 	CascadeFields `yaml:",inline"`
-	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
-	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // validate is a package-level singleton validator instance to avoid
@@ -89,11 +78,13 @@ var validate = func() *validator.Validate {
 }()
 
 func init() {
-	if err := validate.RegisterValidation("remote_host", validateRemoteHost); err != nil {
-		panic(err)
-	}
-	if err := validate.RegisterValidation("allowed_ref", validateAllowedRef); err != nil {
-		panic(err)
+	for tag, fn := range map[string]validator.Func{
+		"remote_host": validateRemoteHost,
+		"allowed_ref": validateAllowedRef,
+	} {
+		if err := validate.RegisterValidation(tag, fn); err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -118,19 +109,18 @@ func Load(path string) *LoadResult {
 	}
 
 	var cfg Config
-	var typePaths []string
+	var raw map[string]any
 	if len(bytes.TrimSpace(data)) > 0 {
-		if err := yaml.Load(data, &cfg); err != nil {
-			var le *yaml.LoadErrors
-			if errors.As(err, &le) {
-				typePaths = typeErrorPaths(le, data)
-			} else {
-				return fileIssueResult("Configuration file can't be read")
-			}
+		if err := yaml.Load(data, &raw); err != nil {
+			// Unparseable YAML: there is no usable config to validate.
+			return fileIssueResult("Configuration file can't be read")
 		}
+		// Decode into the typed config; ignore type-mismatch errors (shapeIssues
+		// reports wrong shapes, validateStruct reports bad values).
+		_ = yaml.Load(data, &cfg)
 	}
 
-	return &LoadResult{Config: &cfg, Issues: collectIssues(&cfg, typePaths)}
+	return &LoadResult{Config: &cfg, Issues: collectIssues(&cfg, raw)}
 }
 
 // GetGlobal returns the global configuration, or a zero-valued GlobalConfig if none is set.

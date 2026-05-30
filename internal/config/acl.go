@@ -7,7 +7,7 @@ import (
 
 // resolveAllowed expands allowed names into concrete usernames,
 // resolving group names into their member users. Returns nil for
-// nil/empty input and for groups that resolve to zero users (public access per CONF-05).
+// nil/empty input and for groups that resolve to zero users (treated as public).
 func resolveAllowed(names []string, users map[string]*UserConfig) []string {
 	result := make(map[string]struct{})
 	for _, name := range names {

@@ -188,7 +188,7 @@ func TestFlatten_AclResolution(t *testing.T) {
 		}
 	}
 
-	// Case 2: Service with allowed: [] (empty) → nil (public per CONF-05)
+	// Case 2: Service with allowed: [] (empty) → nil (public)
 	publicSvc := findSvc("Public status")
 	if publicSvc == nil {
 		t.Fatal("expected to find 'Public status' service")

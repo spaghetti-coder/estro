@@ -18,19 +18,19 @@ type CommandValue []string
 
 // CascadeFields holds fields that cascade: global → section → service.
 type CascadeFields struct {
-	Timeout       *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
-	Confirm       *bool      `yaml:"confirm,omitempty"`
-	Allowed       StringList `yaml:"allowed,omitempty" validate:"omitempty,dive,required,allowed_ref"`
-	Remote        StringList `yaml:"remote,omitempty" validate:"omitempty,dive,required,remote_host"`
-	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty" validate:"omitempty,dive,required"`
-	Enabled       *bool      `yaml:"enabled,omitempty"`
-	Restricted    *bool      `yaml:"restricted,omitempty"`
+	Timeout       *int       `yaml:"timeout" validate:"omitempty,gt=0"`
+	Confirm       *bool      `yaml:"confirm"`
+	Allowed       StringList `yaml:"allowed" validate:"omitempty,dive,required,allowed_ref"`
+	Remote        StringList `yaml:"remote" validate:"omitempty,dive,required,remote_host"`
+	RemoteSSHOpts StringList `yaml:"remote_ssh_opts" validate:"omitempty,dive,required"`
+	Enabled       *bool      `yaml:"enabled"`
+	Restricted    *bool      `yaml:"restricted"`
 }
 
 // LayoutFields holds fields that cascade: global → section (not service-level).
 type LayoutFields struct {
-	Collapsable *bool `yaml:"collapsable,omitempty"`
-	Columns     *int  `yaml:"columns,omitempty" validate:"omitempty,gte=1,lte=12"`
+	Collapsable *bool `yaml:"collapsable"`
+	Columns     *int  `yaml:"columns" validate:"omitempty,gte=1,lte=12"`
 }
 
 func (s *StringList) UnmarshalYAML(value *yaml.Node) error {

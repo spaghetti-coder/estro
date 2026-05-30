@@ -1,17 +1,18 @@
-// Package-internal validation engine: custom validators, the Issue/LoadResult
-// types, issue collection from validator/yaml errors, and degraded-mode helpers.
-// See docs/kv1/task016-spec.md.
+// Configuration validation: custom validators, the Issue/LoadResult types, and
+// the value/shape/unknown-key checks that build the issue list.
 package config
 
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"go.yaml.in/yaml/v4"
 )
 
 // validateAllowedRef is the "allowed_ref" element validator: an `allowed`
@@ -29,13 +30,8 @@ func validateAllowedRef(fl validator.FieldLevel) bool {
 		return true
 	}
 	for _, u := range top.Users {
-		if u == nil {
-			continue
-		}
-		for _, g := range u.Groups {
-			if g == name {
-				return true
-			}
+		if u != nil && slices.Contains(u.Groups, name) {
+			return true
 		}
 	}
 	return false
@@ -44,7 +40,7 @@ func validateAllowedRef(fl validator.FieldLevel) bool {
 // Issue is one human-readable configuration problem.
 type Issue struct {
 	Path string // dotted path (e.g. "global.hostname"); "" for file-level problems
-	Msg  string // "required" | "invalid value" | "invalid field" | a precondition message
+	Msg  string // "required" | "invalid value" | "invalid field"
 }
 
 // String renders the issue, back-ticking the path when present.
@@ -84,25 +80,70 @@ func (r *LoadResult) hasIssue(path string) bool {
 
 var (
 	rootPrefixRe = regexp.MustCompile(`^[^.]+\.`) // strip leading "Config."
-	inlineSegRe  = regexp.MustCompile(`\.(CascadeFields|LayoutFields)`)
+	inlineSegRe  = embeddedSegRe()                // strip embedded-struct segments (derived by reflection)
 	bracketRe    = regexp.MustCompile(`\[([^\]]*)\]`)
 	digitsRe     = regexp.MustCompile(`^\d+$`)
-	xKeyRe       = regexp.MustCompile(`^x-`)
-	extPathRe    = regexp.MustCompile(`(^|\.)x-`) // a path segment that is an x-* extension key
 )
 
-// formatPath turns a validator namespace into the display path of spec §5:
-// strip the root type, strip inline-embedded struct segments, and turn
-// non-numeric map-key brackets into dotted segments (numeric = array index).
+// embeddedSegRe builds the regex that strips anonymous-embedded struct type
+// names (e.g. CascadeFields, LayoutFields) from a validator namespace. The names
+// are derived by reflection over the Config schema, so renaming or adding an
+// embed can't silently break formatPath.
+func embeddedSegRe() *regexp.Regexp {
+	names := embeddedStructNames(reflect.TypeOf(Config{}), map[reflect.Type]bool{})
+	slices.Sort(names)
+	names = slices.Compact(names)
+	if len(names) == 0 {
+		return regexp.MustCompile(`$^`) // matches nothing
+	}
+	for i, n := range names {
+		names[i] = regexp.QuoteMeta(n)
+	}
+	return regexp.MustCompile(`\.(` + strings.Join(names, "|") + `)`)
+}
+
+// embeddedStructNames returns the type names of all anonymous embedded structs
+// reachable from t; validator/v10 includes these as extra namespace segments.
+func embeddedStructNames(t reflect.Type, seen map[reflect.Type]bool) []string {
+	t = derefAll(t)
+	if t.Kind() != reflect.Struct || seen[t] {
+		return nil
+	}
+	seen[t] = true
+	var names []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Anonymous && derefAll(f.Type).Kind() == reflect.Struct {
+			names = append(names, derefAll(f.Type).Name())
+		}
+		names = append(names, embeddedStructNames(f.Type, seen)...)
+	}
+	return names
+}
+
+// derefAll unwraps pointer, slice, array, and map types to their element type.
+func derefAll(t reflect.Type) reflect.Type {
+	for {
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Map:
+			t = t.Elem()
+		default:
+			return t
+		}
+	}
+}
+
+// formatPath turns a validator namespace into a display path: drop the root
+// type and inline-embed segments, and dot non-numeric map-key brackets (numeric
+// brackets stay as array indices).
 func formatPath(ns string) string {
 	ns = rootPrefixRe.ReplaceAllString(ns, "")
 	ns = inlineSegRe.ReplaceAllString(ns, "")
 	ns = bracketRe.ReplaceAllStringFunc(ns, func(m string) string {
 		inner := m[1 : len(m)-1]
 		if digitsRe.MatchString(inner) {
-			// All-digit bracket content is treated as an array index (kept as [n]).
-			// An all-digit username would be misclassified here, which is acceptable
-			// (usernames are operator-chosen); see spec §5.
+			// All-digit brackets are array indices; an all-digit map key would be
+			// misclassified, which is acceptable for operator-chosen names.
 			return m
 		}
 		return "." + inner // map key — dotted
@@ -135,145 +176,198 @@ func validateStruct(cfg *Config) []Issue {
 	return issues
 }
 
-// unknownKeyIssues walks the resolved config and reports every non-"x-" key
-// captured in an Extra catch-all map. It does NOT descend into the value.
-func unknownKeyIssues(cfg *Config) []Issue {
+// collectIssues merges value-rule failures (validator/v10) and wrong-shape /
+// unknown-key findings from the structural walk over the resolved tree, then
+// dedupes to one issue per field path.
+func collectIssues(cfg *Config, raw map[string]any) []Issue {
 	var issues []Issue
-	add := func(prefix string, extra map[string]yaml.Node) {
-		for k := range extra {
-			if xKeyRe.MatchString(k) {
-				continue
-			}
-			path := k
-			if prefix != "" {
-				path = prefix + "." + k
-			}
-			issues = append(issues, Issue{Path: path, Msg: "invalid field"})
-		}
-	}
-	add("", cfg.Extra)
-	if cfg.Global != nil {
-		add("global", cfg.Global.Extra)
-	}
-	for name, u := range cfg.Users {
-		if u != nil {
-			add("users."+name, u.Extra)
-		}
-	}
-	for i := range cfg.Sections {
-		sec := &cfg.Sections[i]
-		add(fmt.Sprintf("sections[%d]", i), sec.Extra)
-		for j := range sec.Services {
-			add(fmt.Sprintf("sections[%d].services[%d]", i, j), sec.Services[j].Extra)
-		}
-	}
-	return issues
-}
-
-// typeErrorPaths resolves each YAML type error to the config path it occurred
-// at (via the parsed node tree), dropping any path inside an x-* extension key
-// (x-* content is always valid). Returns de-duplicated paths.
-func typeErrorPaths(le *yaml.LoadErrors, data []byte) []string {
-	index := map[int]string{}
-	var root yaml.Node
-	if yaml.Load(data, &root) == nil {
-		buildLineIndex(&root, "", index)
-	}
-	var paths []string
-	seen := map[string]bool{}
-	for _, e := range le.Errors {
-		p := index[e.Line]
-		if extPathRe.MatchString(p) {
-			continue
-		}
-		if !seen[p] {
-			seen[p] = true
-			paths = append(paths, p)
-		}
-	}
-	return paths
-}
-
-// isPathOrDescendant reports whether t equals v or is nested under it
-// (e.g. "global.hostname[0]" is under "global.hostname").
-func isPathOrDescendant(t, v string) bool {
-	return t == v || strings.HasPrefix(t, v+".") || strings.HasPrefix(t, v+"[")
-}
-
-// fieldPath strips a trailing "[i]" index so a type error reported on a list
-// element collapses to its field when no validator issue claims it.
-func fieldPath(p string) string {
-	if i := strings.LastIndex(p, "["); i > 0 && strings.HasSuffix(p, "]") {
-		return p[:i]
-	}
-	return p
-}
-
-// collectIssues merges all issue sources into the final, deduped list. A YAML
-// type error relabels the validator issue for the same field (or its ancestor)
-// to "invalid type" rather than adding a separate, element-pathed entry; type
-// errors with no matching validator issue are added as standalone "invalid type".
-func collectIssues(cfg *Config, typePaths []string) []Issue {
-	vIssues := validateStruct(cfg)
-	consumed := make([]bool, len(typePaths))
-	for i := range vIssues {
-		for j, tp := range typePaths {
-			if isPathOrDescendant(tp, vIssues[i].Path) {
-				vIssues[i].Msg = "invalid type"
-				consumed[j] = true
-			}
-		}
-	}
-	issues := vIssues
-	for j, tp := range typePaths {
-		if !consumed[j] {
-			issues = append(issues, Issue{Path: fieldPath(tp), Msg: "invalid type"})
-		}
-	}
-	issues = append(issues, unknownKeyIssues(cfg)...)
+	issues = append(issues, validateStruct(cfg)...)
+	issues = append(issues, shapeIssues(raw)...)
 	return dedupeSort(issues)
 }
 
-// buildLineIndex maps each value node's YAML line to its dotted display path
-// (yaml key names, numeric [i] for sequence elements), matching formatPath.
-func buildLineIndex(n *yaml.Node, prefix string, index map[int]string) {
-	switch n.Kind {
-	case yaml.DocumentNode:
-		for _, c := range n.Content {
-			buildLineIndex(c, prefix, index)
+// shapeIssues reports "invalid value" for any present field whose value has the
+// wrong YAML shape, walking the resolved tree (anchors/merges expanded) against
+// the struct schema. Unknown and x-* keys are skipped.
+func shapeIssues(raw map[string]any) []Issue {
+	var issues []Issue
+	walkStructShape(reflect.TypeOf(Config{}), raw, "", &issues)
+	return issues
+}
+
+// walkStructShape checks every key in node against the struct schema defined by
+// type t. It skips x-* extension keys; for known keys it delegates to
+// checkFieldShape; for unknown keys it emits an "invalid field" issue.
+func walkStructShape(t reflect.Type, node map[string]any, path string, issues *[]Issue) {
+	schema := schemaFields(t)
+	for key, val := range node {
+		if strings.HasPrefix(key, "x-") {
+			continue
 		}
-	case yaml.MappingNode:
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			key, val := n.Content[i], n.Content[i+1]
-			path := key.Value
-			if prefix != "" {
-				path = prefix + "." + key.Value
+		field, ok := schema[key]
+		if !ok {
+			*issues = append(*issues, Issue{Path: joinPath(path, key), Msg: "invalid field"})
+			continue
+		}
+		checkFieldShape(field.Type, val, joinPath(path, key), issues)
+	}
+}
+
+// checkFieldShape validates that val has the correct YAML shape for the given
+// field type ft. It appends an Issue with Msg "invalid value" on mismatch and
+// recurses into structs, slices of structs, and map values.
+func checkFieldShape(ft reflect.Type, val any, path string, issues *[]Issue) {
+	if val == nil {
+		return
+	}
+
+	ft = derefType(ft)
+
+	// StringList and CommandValue: must NOT be a mapping (scalar or sequence OK).
+	stringListType := reflect.TypeOf(StringList(nil))
+	commandValueType := reflect.TypeOf(CommandValue(nil))
+	if ft == stringListType || ft == commandValueType {
+		if _, isMap := asMap(val); isMap {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
+		}
+		return
+	}
+
+	switch ft.Kind() {
+	case reflect.Slice:
+		// Other slices: must be a sequence.
+		seq, isSeq := asSeq(val)
+		if !isSeq {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
+			return
+		}
+		// Recurse into struct elements.
+		elemType := derefType(ft.Elem())
+		if elemType.Kind() == reflect.Struct {
+			for i, elem := range seq {
+				elemPath := fmt.Sprintf("%s[%d]", path, i)
+				if m, ok := asMap(elem); ok {
+					walkStructShape(elemType, m, elemPath, issues)
+				} else if elem != nil {
+					*issues = append(*issues, Issue{Path: elemPath, Msg: "invalid value"})
+				}
 			}
-			index[val.Line] = path
-			buildLineIndex(val, path, index)
 		}
-	case yaml.SequenceNode:
-		for i, c := range n.Content {
-			path := fmt.Sprintf("%s[%d]", prefix, i)
-			index[c.Line] = path
-			buildLineIndex(c, path, index)
+
+	case reflect.Struct:
+		m, isMap := asMap(val)
+		if !isMap {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
+			return
+		}
+		walkStructShape(ft, m, path, issues)
+
+	case reflect.Map:
+		// map[string]*Struct or similar.
+		m, isMap := asMap(val)
+		if !isMap {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
+			return
+		}
+		valElemType := derefType(ft.Elem())
+		if valElemType.Kind() == reflect.Struct {
+			for k, v := range m {
+				entryPath := joinPath(path, k)
+				if mv, ok := asMap(v); ok {
+					walkStructShape(valElemType, mv, entryPath, issues)
+				} else if v != nil {
+					*issues = append(*issues, Issue{Path: entryPath, Msg: "invalid value"})
+				}
+			}
+		}
+
+	default:
+		// Scalar kinds (string, int, bool, float, etc.): must NOT be a mapping or sequence.
+		if _, isMap := asMap(val); isMap {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
+			return
+		}
+		if _, isSeq := asSeq(val); isSeq {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
 		}
 	}
 }
 
+// schemaFields returns a map from YAML key name to StructField for the given
+// struct type. It flattens anonymous inline-embedded structs (e.g. CascadeFields,
+// LayoutFields) and skips the inline Extra catch-all map and yaml:"-" fields.
+func schemaFields(t reflect.Type) map[string]reflect.StructField {
+	result := make(map[string]reflect.StructField)
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag := f.Tag.Get("yaml")
+		if tag == "-" {
+			continue
+		}
+		// Split tag into name and options.
+		name, opts, _ := strings.Cut(tag, ",")
+		isInline := strings.Contains(opts, "inline") || (name == "" && strings.Contains(tag, "inline"))
+
+		if isInline {
+			// Inline map (Extra catch-all): skip.
+			if f.Type.Kind() == reflect.Map {
+				continue
+			}
+			// Anonymous inline struct: flatten recursively.
+			embedded := derefType(f.Type)
+			if embedded.Kind() == reflect.Struct {
+				maps.Copy(result, schemaFields(embedded))
+			}
+			continue
+		}
+
+		if name == "" {
+			name = f.Name
+		}
+		result[name] = f
+	}
+	return result
+}
+
+// derefType returns the element type if t is a pointer, otherwise t.
+func derefType(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
+}
+
+// asMap returns (m, true) if val is a map[string]any.
+func asMap(val any) (map[string]any, bool) {
+	m, ok := val.(map[string]any)
+	return m, ok
+}
+
+// asSeq returns (s, true) if val is a []any.
+func asSeq(val any) ([]any, bool) {
+	s, ok := val.([]any)
+	return s, ok
+}
+
+// joinPath concatenates prefix and key with ".", or returns key when prefix is empty.
+func joinPath(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
+}
+
 // msgRank orders issue messages so that, when several land on the same field,
-// the most root-cause one wins (a wrong type subsumes the "required" or
-// "invalid value" it incidentally triggers).
+// the most root-cause one wins (a present-but-wrong value subsumes the
+// "required" it incidentally triggers when the bad value decodes to empty).
 func msgRank(msg string) int {
 	switch msg {
-	case "invalid type":
-		return 0
 	case "invalid value":
-		return 1
+		return 0
 	case "required":
-		return 2
+		return 1
 	case "invalid field":
-		return 3
+		return 2
 	default:
 		return 99
 	}
@@ -313,11 +407,9 @@ func dedupeSort(in []Issue) []Issue {
 	return out
 }
 
-// ServerAddr returns the host:port to bind, substituting defaults for any
-// server field that is invalid (degraded-mode boot, spec §6.2). The port is
-// defaulted whenever it is outside 1..65535 — this covers an out-of-range
-// value and a wrong-type value that yaml resolved to 0 (which would otherwise
-// bind a random free port) — so it does not rely on issue bookkeeping.
+// ServerAddr returns the host:port to bind, falling back to defaults for an
+// invalid hostname or an out-of-range port (port 0 from a wrong-type value
+// would otherwise bind a random free port).
 func (r *LoadResult) ServerAddr() string {
 	g := r.Config.GetGlobal()
 	host := coalesce(g.Hostname, defaultHostname)
