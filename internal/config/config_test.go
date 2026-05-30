@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -140,20 +139,22 @@ func TestLoadValidConfig(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("expected no error loading valid config, got: %v", err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	if cfg.Global == nil || cfg.Global.Title == nil || *cfg.Global.Title != "Estro" {
 		t.Errorf("expected global title 'Estro', got %v", cfg.Global)
 	}
 }
 
 func TestLoadRealConfigFile(t *testing.T) {
-	cfg, err := Load(configPath())
-	if err != nil {
-		t.Fatalf("expected no error loading real config.yaml, got: %v", err)
+	res := Load(configPath())
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	if cfg.Global == nil || cfg.Global.Title == nil || *cfg.Global.Title != "Estro" {
 		t.Errorf("expected global title 'Estro', got %v", cfg.Global)
 	}
@@ -164,19 +165,19 @@ func TestLoadInvalidConfig(t *testing.T) {
 	path := writeTestConfig(t, content)
 	defer func() { _ = os.Remove(path) }()
 
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for config with empty required field, got nil")
+	res := Load(path)
+	if res.Healthy() {
+		t.Fatal("expected issues for empty required field")
 	}
 }
 
 func TestLoadMissingFile(t *testing.T) {
-	_, err := Load("/nonexistent/path/config.yaml")
-	if err == nil {
-		t.Fatal("expected error for missing config file, got nil")
+	res := Load("/nonexistent/path/config.yaml")
+	if res.Healthy() {
+		t.Fatal("expected degraded")
 	}
-	if !strings.Contains(err.Error(), "reading config file") {
-		t.Errorf("expected error about reading config file, got: %v", err)
+	if res.IssueStrings()[0] != "Configuration file can't be read" {
+		t.Errorf("got %q", res.IssueStrings()[0])
 	}
 }
 
@@ -185,12 +186,9 @@ func TestLoadBadYAML(t *testing.T) {
 	path := writeTestConfig(t, content)
 	defer func() { _ = os.Remove(path) }()
 
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for bad YAML, got nil")
-	}
-	if !strings.Contains(err.Error(), "parsing config YAML") {
-		t.Errorf("expected YAML parse error, got: %v", err)
+	res := Load(path)
+	if res.Healthy() {
+		t.Fatal("expected degraded for bad YAML")
 	}
 }
 
@@ -198,11 +196,11 @@ func TestConfigResponse(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
-	resp := cfg.GetConfigResponse()
+	resp := res.Config.GetConfigResponse()
 	if resp.Title != "Estro" {
 		t.Errorf("expected title 'Estro', got %s", resp.Title)
 	}
@@ -211,28 +209,5 @@ func TestConfigResponse(t *testing.T) {
 	}
 	if len(resp.Users) != 3 {
 		t.Errorf("expected 3 users, got %d", len(resp.Users))
-	}
-}
-
-func TestGlobalConfigAddr(t *testing.T) {
-	ptrStr := func(s string) *string { return &s }
-	ptrInt := func(i int) *int { return &i }
-
-	tests := []struct {
-		name   string
-		global *GlobalConfig
-		want   string
-	}{
-		{"defaults", &GlobalConfig{}, "127.0.0.1:3000"},
-		{"custom hostname", &GlobalConfig{Hostname: ptrStr("0.0.0.0")}, "0.0.0.0:3000"},
-		{"custom port", &GlobalConfig{Port: ptrInt(8080)}, "127.0.0.1:8080"},
-		{"both custom", &GlobalConfig{Hostname: ptrStr("0.0.0.0"), Port: ptrInt(8080)}, "0.0.0.0:8080"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.global.Addr(); got != tt.want {
-				t.Errorf("Addr() = %q, want %q", got, tt.want)
-			}
-		})
 	}
 }

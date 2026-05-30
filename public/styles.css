@@ -461,3 +461,15 @@ select.form-input option{ background:var(--card); }
 @media (hover:hover){
   .fab-btn:hover{ background:light-dark(rgba(59,130,246,0.1), rgba(77,163,255,0.12)); color:var(--fg); }
 }
+
+/* config issues panel (degraded mode) */
+.config-issues{
+  border:1px solid light-dark(rgba(239,68,68,0.35), rgba(239,68,68,0.25));
+  background:light-dark(rgba(254,242,242,0.9), rgba(42,18,18,0.85));
+  border-radius:var(--radius);
+  padding:12px 16px;
+  margin:0;
+}
+.config-issues-title{ margin:0 0 .5rem; font-size:1rem; font-weight:600; color:var(--fg); }
+.config-issues-list{ margin:0; padding-left:1.25rem; color:var(--fg); }
+.config-issues-list li{ margin:.25rem 0; font-family:ui-monospace,monospace; font-size:13px; }

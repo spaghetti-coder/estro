@@ -43,6 +43,8 @@ type ConfigResponse struct {
 	Title    string   `json:"title"`
 	Subtitle string   `json:"subtitle"`
 	Users    []string `json:"users"`
+	Degraded bool     `json:"degraded"`
+	Issues   []string `json:"issues,omitempty"`
 }
 
 // clientTimeoutBuffer is the buffer (10s) added to the server-side timeout

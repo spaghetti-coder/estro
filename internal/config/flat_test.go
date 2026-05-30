@@ -55,10 +55,11 @@ func TestSerializeService(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	services := cfg.Flatten()
 
 	wantTitles := []string{"Uptime", "CPU", "Auth log", "Three-hop date"}
@@ -133,10 +134,11 @@ func TestCommandValueString(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	services := cfg.Flatten()
 
 	for _, svc := range services {
@@ -157,10 +159,11 @@ func TestFlatten_AclResolution(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	services := cfg.Flatten()
 
 	findSvc := func(title string) *FlatService {

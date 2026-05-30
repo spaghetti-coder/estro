@@ -2,8 +2,8 @@
 package config
 
 import (
+	"bytes"
 	"errors"
-	"fmt"
 	"maps"
 	"os"
 	"reflect"
@@ -29,39 +29,49 @@ const (
 type Config struct {
 	Global   *GlobalConfig          `yaml:"global,omitempty" validate:"omitempty"`
 	Users    map[string]*UserConfig `yaml:"users,omitempty" validate:"omitempty,dive"`
-	Sections []SectionConfig        `yaml:"sections,omitempty" validate:"omitempty,dive"`
+	Sections []SectionConfig        `yaml:"sections,omitempty" validate:"required,min=1,dive"`
+	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
+	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // GlobalConfig holds settings that apply across all sections and services.
 type GlobalConfig struct {
 	Title         *string `yaml:"title,omitempty"`
 	Subtitle      *string `yaml:"subtitle,omitempty"`
-	Hostname      *string `yaml:"hostname,omitempty"`
-	Port          *int    `yaml:"port,omitempty" validate:"omitempty,gt=0"`
+	Hostname      *string `yaml:"hostname,omitempty" validate:"omitempty,hostname_rfc1123|ip"`
+	Port          *int    `yaml:"port,omitempty" validate:"omitempty,gte=1,lte=65535"`
 	Secret        *string `yaml:"secret,omitempty"`
 	CascadeFields `yaml:",inline"`
 	LayoutFields  `yaml:",inline"`
+	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
+	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // UserConfig defines a single user's credentials and group memberships.
 type UserConfig struct {
 	Password string     `yaml:"password" validate:"required"`
-	Groups   StringList `yaml:"groups,omitempty"`
+	Groups   StringList `yaml:"groups,omitempty" validate:"omitempty,dive,required"`
+	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
+	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // SectionConfig groups services under a common heading in the UI.
 type SectionConfig struct {
 	Title         string          `yaml:"title" validate:"required"`
-	Services      []ServiceConfig `yaml:"services,omitempty" validate:"omitempty,dive"`
+	Services      []ServiceConfig `yaml:"services,omitempty" validate:"required,min=1,dive"`
 	CascadeFields `yaml:",inline"`
 	LayoutFields  `yaml:",inline"`
+	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
+	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // ServiceConfig defines a single runnable command exposed in the UI.
 type ServiceConfig struct {
 	Title         string       `yaml:"title" validate:"required"`
-	Command       CommandValue `yaml:"command" validate:"required"`
+	Command       CommandValue `yaml:"command" validate:"required,min=1,dive,required"`
 	CascadeFields `yaml:",inline"`
+	// Extra captures unknown YAML keys at this level for foreign-key validation; load-internal only.
+	Extra map[string]yaml.Node `yaml:",inline"`
 }
 
 // validate is a package-level singleton validator instance to avoid
@@ -82,6 +92,9 @@ func init() {
 	if err := validate.RegisterValidation("remote_host", validateRemoteHost); err != nil {
 		panic(err)
 	}
+	if err := validate.RegisterValidation("allowed_ref", validateAllowedRef); err != nil {
+		panic(err)
+	}
 }
 
 // coalesce returns the value pointed to by ptr, or the provided fallback if ptr
@@ -90,42 +103,41 @@ func coalesce[T any](ptr *T, fallback T) T {
 	return cascade(ptr, nil, nil, fallback)
 }
 
-// Addr returns the host:port address string for the server to listen on,
-// falling back to defaults (127.0.0.1:3000) when not explicitly set.
-func (g *GlobalConfig) Addr() string {
-	return fmt.Sprintf("%s:%d", coalesce(g.Hostname, defaultHostname), coalesce(g.Port, defaultPort))
+// fileIssueResult builds a degraded result for a config we couldn't read or parse.
+func fileIssueResult(msg string) *LoadResult {
+	return &LoadResult{Config: &Config{}, Issues: []Issue{{Msg: msg}}}
 }
 
-// Load reads and validates the YAML configuration file at path.
-func Load(path string) (*Config, error) {
+// Load reads the YAML configuration at path and validates the resolved
+// configuration. It never returns a fatal error: the result always carries a
+// usable Config (default-backed when degraded) plus any collected issues.
+func Load(path string) *LoadResult {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading config file %s: %w", path, err)
+		return fileIssueResult("Configuration file can't be read")
 	}
 
 	var cfg Config
-	if err := yaml.Load(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config YAML: %w", err)
-	}
-
-	if err := validate.Struct(cfg); err != nil {
-		return nil, formatValidationError(err)
-	}
-
-	return &cfg, nil
-}
-
-func formatValidationError(err error) error {
-	var ve validator.ValidationErrors
-	if errors.As(err, &ve) {
-		var msgs []string
-		for _, fe := range ve {
-			field := fe.Field()
-			msgs = append(msgs, fmt.Sprintf("field %q: %s", field, fe.Tag()))
+	var issues []Issue
+	if len(bytes.TrimSpace(data)) > 0 {
+		if err := yaml.Load(data, &cfg); err != nil {
+			var le *yaml.LoadErrors
+			if errors.As(err, &le) {
+				// Type errors: cfg is still populated for the valid fields.
+				// typeErrorIssues maps each error's line back to its field path and
+				// labels it "invalid type"; dedupeSort then suppresses any
+				// consequent validator issues for the same path.
+				issues = append(issues, typeErrorIssues(le, data)...)
+			} else {
+				// Parse/syntax error: no usable resolved config.
+				return fileIssueResult("Configuration file can't be read")
+			}
 		}
-		return fmt.Errorf("config validation failed: %s", strings.Join(msgs, "; "))
 	}
-	return err
+
+	issues = append(issues, validateStruct(&cfg)...)
+	issues = append(issues, unknownKeyIssues(&cfg)...)
+	return &LoadResult{Config: &cfg, Issues: dedupeSort(issues)}
 }
 
 // GetGlobal returns the global configuration, or a zero-valued GlobalConfig if none is set.

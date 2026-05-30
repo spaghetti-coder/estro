@@ -38,14 +38,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
+	res := config.Load(*configPath)
+	if !res.Healthy() {
+		issues := res.IssueStrings()
+		slog.Warn("configuration has issues; starting in degraded mode", "count", len(issues))
+		for _, is := range issues {
+			slog.Warn("config issue", "issue", is)
+		}
 	}
+	cfg := res.Config
 
 	jobStore := job.NewStore()
-
 	cmdCtx, cmdCancel := context.WithCancel(context.Background())
 
 	sessionSecret, err := auth.GenerateSessionSecret()
@@ -59,7 +62,7 @@ func main() {
 	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
 
-	h := handler.NewHandler(cfg, jobStore, sessionStore, cmdCtx)
+	h := handler.NewHandler(res, jobStore, sessionStore, cmdCtx)
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
@@ -89,7 +92,7 @@ func main() {
 		jobStore.MarkAllRunningAsError("server shutting down")
 	}()
 
-	addr := cfg.GetGlobal().Addr()
+	addr := res.ServerAddr()
 	slog.Info("Estro listening", "address", "http://"+addr)
 	sc := echo.StartConfig{
 		Address:         addr,

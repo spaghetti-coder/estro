@@ -85,11 +85,11 @@ func loadTestConfig(t *testing.T) *config.Config {
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	cfg, err := config.Load(tmp.Name())
-	if err != nil {
-		t.Fatalf("failed to load test config: %v", err)
+	res := config.Load(tmp.Name())
+	if !res.Healthy() {
+		t.Fatalf("failed to load test config: %v", res.IssueStrings())
 	}
-	return cfg
+	return res.Config
 }
 
 func setupTestEnvWithConfig(t *testing.T, yamlContent string) (*echo.Echo, *Handler, *job.Store, sessions.Store) {
@@ -106,9 +106,9 @@ func setupTestEnvWithConfig(t *testing.T, yamlContent string) (*echo.Echo, *Hand
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	cfg, err := config.Load(tmp.Name())
-	if err != nil {
-		t.Fatalf("failed to load test config: %v", err)
+	res := config.Load(tmp.Name())
+	if !res.Healthy() {
+		t.Fatalf("failed to load test config: %v", res.IssueStrings())
 	}
 
 	store := job.NewStore()
@@ -117,7 +117,7 @@ func setupTestEnvWithConfig(t *testing.T, yamlContent string) (*echo.Echo, *Hand
 		t.Fatal(err)
 	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
-	h := NewHandler(cfg, store, sessionStore, context.Background())
+	h := NewHandler(res, store, sessionStore, context.Background())
 
 	e := echo.New()
 	e.Use(appMiddleware.SecurityMiddleware("default-src 'self'"))
@@ -161,6 +161,9 @@ func TestGetConfig(t *testing.T) {
 	if len(users) != 3 {
 		t.Errorf("expected 3 users, got %d", len(users))
 	}
+	if result["degraded"] != false {
+		t.Errorf("expected degraded=false on healthy config, got %v", result["degraded"])
+	}
 }
 
 func TestGetConfigDefaultTitle(t *testing.T) {
@@ -184,11 +187,11 @@ sections:
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	cfg, err := config.Load(tmp.Name())
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
+	res := config.Load(tmp.Name())
+	if !res.Healthy() {
+		t.Fatalf("failed to load config: %v", res.IssueStrings())
 	}
-	resp := cfg.GetConfigResponse()
+	resp := res.Config.GetConfigResponse()
 	if resp.Title != "Estro" {
 		t.Errorf("expected default title 'Estro', got %s", resp.Title)
 	}
@@ -439,7 +442,7 @@ func TestGetJobCompleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
-	h := NewHandler(cfg, store, sessionStore, context.Background())
+	h := NewHandler(&config.LoadResult{Config: cfg}, store, sessionStore, context.Background())
 
 	e := echo.New()
 	e.GET("/jobs/:id", h.getJob)
@@ -729,6 +732,98 @@ func TestRunService_RestrictedHidden_Returns404(t *testing.T) {
 	}
 	if result["error"] != "Unknown service" {
 		t.Errorf("expected 'Unknown service', got '%s'", result["error"])
+	}
+}
+
+func writeTempConfig(t *testing.T, content string) string {
+	t.Helper()
+	tmp, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	_ = tmp.Close()
+	t.Cleanup(func() { _ = os.Remove(tmp.Name()) })
+	return tmp.Name()
+}
+
+func degradedEnv(t *testing.T) *echo.Echo {
+	t.Helper()
+	res := config.Load(writeTempConfig(t, "global:\n  port: 99999\n")) // invalid port, no sections => degraded
+	e := echo.New()
+	store := job.NewStore()
+	sec, err := auth.GenerateSessionSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(res, store, auth.NewSessionStore(sec), context.Background())
+	h.RegisterRoutes(e)
+	return e
+}
+
+func TestHealthzDegraded(t *testing.T) {
+	e := degradedEnv(t)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+	var body struct {
+		Status string   `json:"status"`
+		Issues []string `json:"issues"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != "error" || len(body.Issues) == 0 {
+		t.Fatalf("expected status=error with issues, got %+v", body)
+	}
+}
+
+func TestConfigDegradedIssues(t *testing.T) {
+	e := degradedEnv(t)
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	var body struct {
+		Degraded bool     `json:"degraded"`
+		Issues   []string `json:"issues"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Degraded || len(body.Issues) == 0 {
+		t.Fatalf("expected degraded with issues, got %+v", body)
+	}
+}
+
+func TestConfigDegradedKeepsDefaultTitle(t *testing.T) {
+	e := degradedEnv(t)
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	var body struct {
+		Title    string `json:"title"`
+		Degraded bool   `json:"degraded"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Degraded || body.Title != "Estro" {
+		t.Fatalf("expected degraded with default title 'Estro', got %+v", body)
+	}
+}
+
+func TestServicesDegradedEmpty(t *testing.T) {
+	e := degradedEnv(t)
+	req := httptest.NewRequest(http.MethodGet, "/services", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("expected 200 []; got %d %q", rec.Code, rec.Body.String())
 	}
 }
 

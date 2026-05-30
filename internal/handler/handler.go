@@ -28,20 +28,34 @@ type Handler struct {
 	jobs         *job.Store
 	sessionStore sessions.Store
 	services     []config.FlatService
+	issues       []string
+	degraded     bool
 	// cmdCtx is the application-lifecycle context, cancelled on server shutdown
 	// (not request-scoped); it bounds async command execution.
 	cmdCtx context.Context
 }
 
-// NewHandler creates a Handler with the provided dependencies.
-func NewHandler(cfg *config.Config, jobStore *job.Store, sessionStore sessions.Store, cmdCtx context.Context) *Handler {
-	return &Handler{
-		cfg:          cfg,
+// NewHandler creates a Handler from a config LoadResult. In degraded mode it
+// serves no services and exposes the issue list instead.
+func NewHandler(res *config.LoadResult, jobStore *job.Store, sessionStore sessions.Store, cmdCtx context.Context) *Handler {
+	h := &Handler{
+		cfg:          res.Config,
 		jobs:         jobStore,
 		sessionStore: sessionStore,
-		services:     cfg.Flatten(),
+		issues:       res.IssueStrings(),
+		degraded:     !res.Healthy(),
 		cmdCtx:       cmdCtx,
 	}
+	if !h.degraded {
+		h.services = res.Config.Flatten()
+	}
+	return h
+}
+
+// healthzResponse is the JSON body of the /healthz endpoint.
+type healthzResponse struct {
+	Status string   `json:"status"`
+	Issues []string `json:"issues,omitempty"`
 }
 
 // errJSON writes a JSON error response with the given status code and message.
@@ -87,16 +101,25 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 }
 
 func (h *Handler) healthz(c *echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	if h.degraded {
+		return c.JSON(http.StatusServiceUnavailable, healthzResponse{Status: "error", Issues: h.issues})
+	}
+	return c.JSON(http.StatusOK, healthzResponse{Status: "ok"})
 }
 
 func (h *Handler) getConfig(c *echo.Context) error {
-	return c.JSON(http.StatusOK, h.cfg.GetConfigResponse())
+	resp := h.cfg.GetConfigResponse()
+	resp.Degraded = h.degraded
+	resp.Issues = h.issues
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) listServices(c *echo.Context) error {
+	if h.degraded {
+		return c.JSON(http.StatusOK, []config.SerializedService{})
+	}
 	username := auth.GetSessionUser(h.sessionStore, c.Request())
-	var result []config.SerializedService
+	result := []config.SerializedService{}
 	for i, svc := range h.services {
 		if svc.IsHidden(username) {
 			continue

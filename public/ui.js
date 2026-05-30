@@ -43,6 +43,7 @@
   let currentUser = null;   // {username} | null
   let loginForUsers = null; // string[] | null — pre-filter when triggered from a service click
   let allUsernames = [];    // union of all allowedUsers across services
+  let configIssues = null;  // array of issue strings when degraded, else null
 
   // --- Theme ---
 
@@ -440,7 +441,21 @@
     return { sectionOrder, sectionMap, sectionsAllDisabled };
   }
 
+  function renderIssues(issues) {
+    buttonsEl.innerHTML = '';
+    renderedSections = [];
+    const tpl = document.getElementById('tpl-issues').content.cloneNode(true);
+    const list = tpl.querySelector('.config-issues-list');
+    for (const issue of issues) {
+      const li = document.createElement('li');
+      li.textContent = issue;
+      list.appendChild(li);
+    }
+    buttonsEl.appendChild(tpl);
+  }
+
   async function loadServices() {
+    if (configIssues !== null) { renderIssues(configIssues); return; }
     try {
       const res = await fetch('/services');
       if (!res.ok) throw new Error('Failed to load services');
@@ -600,7 +615,7 @@
     openModalEl(logsModalEl, logsModalPanel);
   }
 
-  function onBootstrap({ title, subtitle, users }, me) {
+  function onBootstrap({ title, subtitle, users, degraded, issues }, me) {
     const siteTitle = document.getElementById('site-title');
     const siteSub   = document.getElementById('site-subtitle');
     siteTitle.textContent = title;
@@ -608,6 +623,7 @@
     if (subtitle) { siteSub.textContent = subtitle; } else { siteSub.style.display = 'none'; }
     allUsernames = users || [];
     currentUser = me;
+    configIssues = degraded ? (issues || []) : null;
     refreshAuth();
   }
 

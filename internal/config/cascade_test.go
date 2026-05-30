@@ -20,8 +20,12 @@ func TestStringListUnmarshalYAML(t *testing.T) {
 		{"comma-separated", "val: 'server1, server2,server3'\n", StringList{"server1", "server2", "server3"}, false},
 		{"yaml array", "val: [server1, server2]\n", StringList{"server1", "server2"}, false},
 		{"comma with spaces", "val: 'admins, guest'\n", StringList{"admins", "guest"}, false},
-		{"trailing comma dropped", "val: 'a,b,'\n", StringList{"a", "b"}, false},
-		{"empty elements dropped", "val: 'a,,b'\n", StringList{"a", "b"}, false},
+		{"trailing comma kept as empty", "val: 'a,b,'\n", StringList{"a", "b", ""}, false},
+		{"empty middle element kept", "val: 'a,,b'\n", StringList{"a", "", "b"}, false},
+		{"leading comma kept as empty", "val: ',a'\n", StringList{"", "a"}, false},
+		{"whitespace-only element kept as empty", "val: 'a, ,b'\n", StringList{"a", "", "b"}, false},
+		{"sequence empty element kept", "val: [a, '', b]\n", StringList{"a", "", "b"}, false},
+		{"sequence whitespace-only kept as empty", "val: [a, ' ', b]\n", StringList{"a", "", "b"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,10 +103,11 @@ func TestCascadeFields(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML())
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	services := cfg.Flatten()
 
 	tests := []struct {
@@ -278,10 +283,11 @@ sections:
 		path := writeTestConfig(t, yaml)
 		defer func() { _ = os.Remove(path) }()
 
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
+		res := Load(path)
+		if !res.Healthy() {
+			t.Fatalf("unexpected issues: %v", res.IssueStrings())
 		}
+		cfg := res.Config
 		services := cfg.Flatten()
 
 		tests := []struct {
@@ -323,10 +329,11 @@ sections:
 		path := writeTestConfig(t, testConfigYAML())
 		defer func() { _ = os.Remove(path) }()
 
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
+		res := Load(path)
+		if !res.Healthy() {
+			t.Fatalf("unexpected issues: %v", res.IssueStrings())
 		}
+		cfg := res.Config
 		services := cfg.Flatten()
 
 		tests := []struct {
@@ -455,10 +462,11 @@ sections:
 	path := writeTestConfig(t, yaml)
 	defer func() { _ = os.Remove(path) }()
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
 	}
+	cfg := res.Config
 	services := cfg.Flatten()
 
 	for _, svc := range services {
@@ -630,10 +638,11 @@ sections:
 		path := writeTestConfig(t, yaml)
 		defer func() { _ = os.Remove(path) }()
 
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
+		res := Load(path)
+		if !res.Healthy() {
+			t.Fatalf("unexpected issues: %v", res.IssueStrings())
 		}
+		cfg := res.Config
 		services := cfg.Flatten()
 
 		for _, svc := range services {
@@ -673,10 +682,11 @@ sections:
 		path := writeTestConfig(t, yaml)
 		defer func() { _ = os.Remove(path) }()
 
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
+		res := Load(path)
+		if !res.Healthy() {
+			t.Fatalf("unexpected issues: %v", res.IssueStrings())
 		}
+		cfg := res.Config
 		services := cfg.Flatten()
 
 		if len(services) != 1 {
@@ -707,10 +717,11 @@ sections:
 		path := writeTestConfig(t, yaml)
 		defer func() { _ = os.Remove(path) }()
 
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
+		res := Load(path)
+		if !res.Healthy() {
+			t.Fatalf("unexpected issues: %v", res.IssueStrings())
 		}
+		cfg := res.Config
 		services := cfg.Flatten()
 
 		if len(services) != 1 {
@@ -744,10 +755,11 @@ sections:
 		path := writeTestConfig(t, yaml)
 		defer func() { _ = os.Remove(path) }()
 
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
+		res := Load(path)
+		if !res.Healthy() {
+			t.Fatalf("unexpected issues: %v", res.IssueStrings())
 		}
+		cfg := res.Config
 		services := cfg.Flatten()
 
 		if len(services) != 1 {

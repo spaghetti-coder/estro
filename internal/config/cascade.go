@@ -20,9 +20,9 @@ type CommandValue []string
 type CascadeFields struct {
 	Timeout       *int       `yaml:"timeout,omitempty" validate:"omitempty,gt=0"`
 	Confirm       *bool      `yaml:"confirm,omitempty"`
-	Allowed       StringList `yaml:"allowed,omitempty"`
-	Remote        StringList `yaml:"remote,omitempty" validate:"omitempty,dive,remote_host"`
-	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty"`
+	Allowed       StringList `yaml:"allowed,omitempty" validate:"omitempty,dive,required,allowed_ref"`
+	Remote        StringList `yaml:"remote,omitempty" validate:"omitempty,dive,required,remote_host"`
+	RemoteSSHOpts StringList `yaml:"remote_ssh_opts,omitempty" validate:"omitempty,dive,required"`
 	Enabled       *bool      `yaml:"enabled,omitempty"`
 	Restricted    *bool      `yaml:"restricted,omitempty"`
 }
@@ -30,7 +30,7 @@ type CascadeFields struct {
 // LayoutFields holds fields that cascade: global → section (not service-level).
 type LayoutFields struct {
 	Collapsable *bool `yaml:"collapsable,omitempty"`
-	Columns     *int  `yaml:"columns,omitempty" validate:"omitempty,gt=0"`
+	Columns     *int  `yaml:"columns,omitempty" validate:"omitempty,gte=1,lte=12"`
 }
 
 func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
@@ -44,10 +44,7 @@ func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
 		parts := strings.Split(raw, ",")
 		result := make([]string, 0, len(parts))
 		for _, p := range parts {
-			trimmed := strings.TrimSpace(p)
-			if trimmed != "" {
-				result = append(result, trimmed)
-			}
+			result = append(result, strings.TrimSpace(p)) // keep empties; validation flags them
 		}
 		*s = result
 		return nil
@@ -55,6 +52,9 @@ func (s *StringList) UnmarshalYAML(value *yaml.Node) error {
 		var items []string
 		if err := value.Decode(&items); err != nil {
 			return err
+		}
+		for i, item := range items {
+			items[i] = strings.TrimSpace(item) // mirror scalar path; blank-only -> "" so dive,required flags it
 		}
 		*s = items
 		return nil
