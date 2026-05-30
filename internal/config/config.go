@@ -118,26 +118,19 @@ func Load(path string) *LoadResult {
 	}
 
 	var cfg Config
-	var issues []Issue
+	var typePaths []string
 	if len(bytes.TrimSpace(data)) > 0 {
 		if err := yaml.Load(data, &cfg); err != nil {
 			var le *yaml.LoadErrors
 			if errors.As(err, &le) {
-				// Type errors: cfg is still populated for the valid fields.
-				// typeErrorIssues maps each error's line back to its field path and
-				// labels it "invalid type"; dedupeSort then suppresses any
-				// consequent validator issues for the same path.
-				issues = append(issues, typeErrorIssues(le, data)...)
+				typePaths = typeErrorPaths(le, data)
 			} else {
-				// Parse/syntax error: no usable resolved config.
 				return fileIssueResult("Configuration file can't be read")
 			}
 		}
 	}
 
-	issues = append(issues, validateStruct(&cfg)...)
-	issues = append(issues, unknownKeyIssues(&cfg)...)
-	return &LoadResult{Config: &cfg, Issues: dedupeSort(issues)}
+	return &LoadResult{Config: &cfg, Issues: collectIssues(&cfg, typePaths)}
 }
 
 // GetGlobal returns the global configuration, or a zero-valued GlobalConfig if none is set.

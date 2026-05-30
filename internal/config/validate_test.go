@@ -540,3 +540,14 @@ func TestLoadXStarAnchorMergeNoLeak(t *testing.T) {
 		t.Errorf("got %v, want [`global.timeout` invalid value]", got)
 	}
 }
+
+func TestLoadHostnameWrongTypeIsInvalidTypeOnce(t *testing.T) {
+	src := "global:\n  hostname: [foobar]\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
+	path := writeTestConfig(t, src)
+	defer func() { _ = os.Remove(path) }()
+	res := Load(path)
+	got := res.IssueStrings()
+	if len(got) != 1 || got[0] != "`global.hostname` invalid type" {
+		t.Errorf("got %v, want [`global.hostname` invalid type]", got)
+	}
+}

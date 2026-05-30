@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"go.yaml.in/yaml/v4"
@@ -169,28 +170,68 @@ func unknownKeyIssues(cfg *Config) []Issue {
 	return issues
 }
 
-// typeErrorIssues converts aggregated yaml type errors into Issues. The yaml
-// library reports a line number but no field path, so we map each error's line
-// back to its config key via the parsed node tree and label it "invalid type".
-func typeErrorIssues(le *yaml.LoadErrors, data []byte) []Issue {
+// typeErrorPaths resolves each YAML type error to the config path it occurred
+// at (via the parsed node tree), dropping any path inside an x-* extension key
+// (x-* content is always valid). Returns de-duplicated paths.
+func typeErrorPaths(le *yaml.LoadErrors, data []byte) []string {
 	index := map[int]string{}
 	var root yaml.Node
 	if yaml.Load(data, &root) == nil {
 		buildLineIndex(&root, "", index)
 	}
-	issues := make([]Issue, 0, len(le.Errors))
+	var paths []string
+	seen := map[string]bool{}
 	for _, e := range le.Errors {
-		path := index[e.Line]
-		// A type error whose line falls inside an x-* extension key (e.g. an
-		// anchor body that is merged elsewhere) must not be reported: x-* content
-		// is always valid. The real merge target is still validated on its own
-		// path (e.g. global.timeout).
-		if extPathRe.MatchString(path) {
+		p := index[e.Line]
+		if extPathRe.MatchString(p) {
 			continue
 		}
-		issues = append(issues, Issue{Path: path, Msg: "invalid type"})
+		if !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
 	}
-	return issues
+	return paths
+}
+
+// isPathOrDescendant reports whether t equals v or is nested under it
+// (e.g. "global.hostname[0]" is under "global.hostname").
+func isPathOrDescendant(t, v string) bool {
+	return t == v || strings.HasPrefix(t, v+".") || strings.HasPrefix(t, v+"[")
+}
+
+// fieldPath strips a trailing "[i]" index so a type error reported on a list
+// element collapses to its field when no validator issue claims it.
+func fieldPath(p string) string {
+	if i := strings.LastIndex(p, "["); i > 0 && strings.HasSuffix(p, "]") {
+		return p[:i]
+	}
+	return p
+}
+
+// collectIssues merges all issue sources into the final, deduped list. A YAML
+// type error relabels the validator issue for the same field (or its ancestor)
+// to "invalid type" rather than adding a separate, element-pathed entry; type
+// errors with no matching validator issue are added as standalone "invalid type".
+func collectIssues(cfg *Config, typePaths []string) []Issue {
+	vIssues := validateStruct(cfg)
+	consumed := make([]bool, len(typePaths))
+	for i := range vIssues {
+		for j, tp := range typePaths {
+			if isPathOrDescendant(tp, vIssues[i].Path) {
+				vIssues[i].Msg = "invalid type"
+				consumed[j] = true
+			}
+		}
+	}
+	issues := vIssues
+	for j, tp := range typePaths {
+		if !consumed[j] {
+			issues = append(issues, Issue{Path: fieldPath(tp), Msg: "invalid type"})
+		}
+	}
+	issues = append(issues, unknownKeyIssues(cfg)...)
+	return dedupeSort(issues)
 }
 
 // buildLineIndex maps each value node's YAML line to its dotted display path
