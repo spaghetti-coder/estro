@@ -238,6 +238,8 @@
   }
 
   async function handleLogout() {
+    const ok = await showConfirm('Confirm logout');
+    if (!ok) return;
     try {
       await fetch('/logout', { method: 'POST' });
     } catch {
