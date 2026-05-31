@@ -91,7 +91,7 @@
     });
   }
 
-  function showToast(message, type = 'info', { jobId, html } = {}) {
+  function showToast(message, type = 'info', { jobId, html, autoDismiss = false } = {}) {
     const t = toastTpl.cloneNode(true).firstElementChild;
     if (type === 'success' || type === 'error') t.classList.add(type);
     t.querySelector('.toast-icon').textContent = TOAST_ICONS[type] || TOAST_ICONS.info;
@@ -109,6 +109,9 @@
     t.querySelector('.toast-close-btn').addEventListener('click', () => t.remove());
     attachSwipeToDismiss(t);
     toastsEl.appendChild(t);
+    if (autoDismiss) {
+      setTimeout(() => t.remove(), 5000);
+    }
   }
 
   // --- Modal helpers ---
@@ -602,6 +605,43 @@
     logsStderrEl.hidden = name !== 'stderr';
   }
 
+  async function copyLogs() {
+    const activeTab = logsModalEl.querySelector('.logs-tab.active').dataset.tab;
+    const content = activeTab === 'stdout' ? logsStdoutEl.textContent : logsStderrEl.textContent;
+    
+    // Try modern Clipboard API first
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(content);
+        showToast('Copied!', 'success', { autoDismiss: true });
+        return;
+      } catch (err) {
+        console.error('Clipboard API failed:', err);
+      }
+    }
+    
+    // Fallback for HTTP / old browsers
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = content;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      
+      if (success) {
+        showToast('Copied!', 'success', { autoDismiss: true });
+      } else {
+        showToast('Failed to copy', 'error');
+      }
+    } catch (err) {
+      console.error('execCommand failed:', err);
+      showToast('Failed to copy', 'error');
+    }
+  }
+
   async function openLogsModal(jobId) {
     let job = {};
     try {
@@ -700,6 +740,7 @@
     logsStderrEl   = document.getElementById('logsStderr');
     logsTabBtns    = logsModalEl?.querySelectorAll('.logs-tab') ?? [];
     logsTabBtns.forEach(btn => btn.addEventListener('click', () => activateLogsTab(btn.dataset.tab)));
+    document.getElementById('logsCopyBtn')?.addEventListener('click', copyLogs);
     document.getElementById('logsModalClose')?.addEventListener('click', () => closeModalEl(logsModalEl));
     setupModalEvents(logsModalEl, () => closeModalEl(logsModalEl));
     userFilterEl?.addEventListener('input', () => populateUserSelect(userFilterEl.value));
