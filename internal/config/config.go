@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -99,9 +100,40 @@ func fileIssueResult(msg string) *LoadResult {
 	return &LoadResult{Config: &Config{}, Issues: []Issue{{Msg: msg}}}
 }
 
+// estroEnvRe matches the {estro_env.VAR} load-time substitution marker. The
+// shell form ${VAR} is intentionally NOT matched — it is left untouched for the
+// command's runtime shell.
+var estroEnvRe = regexp.MustCompile(`\{estro_env\.([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expandEnv substitutes {estro_env.VAR} in every scalar value of the parsed
+// YAML with the environment variable's value, returning an issue for each
+// referenced variable that is not set.
+func expandEnv(n *yaml.Node) []Issue {
+	var issues []Issue
+	var walk func(*yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.ScalarNode {
+			n.Value = estroEnvRe.ReplaceAllStringFunc(n.Value, func(m string) string {
+				name := estroEnvRe.FindStringSubmatch(m)[1]
+				if v, ok := os.LookupEnv(name); ok {
+					return v
+				}
+				issues = append(issues, Issue{Msg: "environment variable " + name + " is not set"})
+				return m
+			})
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(n)
+	return issues
+}
+
 // Load reads the YAML configuration at path and validates the resolved
-// configuration. It never returns a fatal error: the result always carries a
-// usable Config (default-backed when degraded) plus any collected issues.
+// configuration. {estro_env.VAR} markers are expanded from the environment
+// first. It never returns a fatal error: the result always carries a usable
+// Config (default-backed when degraded) plus any collected issues.
 func Load(path string) *LoadResult {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -110,17 +142,22 @@ func Load(path string) *LoadResult {
 
 	var cfg Config
 	var raw map[string]any
+	var issues []Issue
 	if len(bytes.TrimSpace(data)) > 0 {
-		if err := yaml.Load(data, &raw); err != nil {
+		var root yaml.Node
+		if err := yaml.Load(data, &root); err != nil {
 			// Unparseable YAML: there is no usable config to validate.
 			return fileIssueResult("Configuration file can't be read")
 		}
-		// Decode into the typed config; ignore type-mismatch errors (shapeIssues
-		// reports wrong shapes, validateStruct reports bad values).
-		_ = yaml.Load(data, &cfg)
+		issues = expandEnv(&root)
+		// Decode the env-expanded node. Type-mismatch errors are ignored:
+		// shapeIssues reports wrong shapes, validateStruct reports bad values.
+		_ = root.Decode(&raw)
+		_ = root.Decode(&cfg)
 	}
 
-	return &LoadResult{Config: &cfg, Issues: collectIssues(&cfg, raw)}
+	issues = append(issues, collectIssues(&cfg, raw)...)
+	return &LoadResult{Config: &cfg, Issues: dedupeSort(issues)}
 }
 
 // GetGlobal returns the global configuration, or a zero-valued GlobalConfig if none is set.

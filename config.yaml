@@ -4,16 +4,40 @@
 #   allowed: 'alice,bob'      # <=> [alice, bob]
 #   remote: ''                # <=> []
 #   groups: [admins, family]  # <=> 'admins, family'
+# 
+# Environment variables support:
+#   For config load variables expansion use "{estro_env.VARNAME}" syntax. Example:
+#   ```yaml
+#   global:
+#     secret: "{estro_env.SESSION_SECRET}"  # <- Must be quoted to avoid yaml expansion to map
+#     # secret: "{estro_env.NOVAR}"         # <- Config error if NOVAR is undefined
+#   # ...
+#   sections:
+#     - title: Foo
+#       services:
+#         - title: Test1
+#           command: echo {estro_env.HOME}  # <- Config varialbe expansion
+#         - title: Test2
+#           command: 
+#             - echo {estro_env.HOME}       # <- Same as above
+#         - title: Test3
+#           command: echo ${HOME}           # <- Command runtime variable expansion
+#   ```
 # ---------------------------------------------------------------------------
+
+# Redundent in this scenario, just to demonstrate that `x-` prefixed keys
+# are supported. `x-` prefix is used to bypass unsupported keys validation
+x-bind-address: &bind-address
+  # Bind address (default 127.0.0.1:3000)
+  hostname: 0.0.0.0
+  port: 3000
 
 global:
   # ~~~ Server ~~~
   # Page heading
   title: Estro
   subtitle: Config test suite
-  # Bind address (default 127.0.0.1:3000)
-  hostname: 0.0.0.0
-  port: 3000
+  <<: *bind-address
   secret:               # session secret (random per restart if omitted)
   # ~~~ Cascading (most specific wins): global → section ~~~
   collapsable: true     # sections can be collapsed (default: true)

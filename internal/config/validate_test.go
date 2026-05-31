@@ -175,6 +175,47 @@ func TestLoadPopulatesValidFieldsDespiteTypeError(t *testing.T) {
 	}
 }
 
+func TestExpandEstroEnv(t *testing.T) {
+	t.Setenv("ESTRO_TEST_HOST", "0.0.0.0")
+	t.Setenv("ESTRO_TEST_SECRET", "s3cr3t")
+	src := "global:\n" +
+		"  hostname: \"{estro_env.ESTRO_TEST_HOST}\"\n" +
+		"  secret: \"{estro_env.ESTRO_TEST_SECRET}\"\n" +
+		"sections:\n  - title: S\n    services:\n      - title: T\n        command: echo {estro_env.ESTRO_TEST_HOST} ${RUNTIME}\n"
+	path := writeTestConfig(t, src)
+	defer func() { _ = os.Remove(path) }()
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("expected healthy, got %v", res.IssueStrings())
+	}
+	g := res.Config.Global
+	if g.Hostname == nil || *g.Hostname != "0.0.0.0" {
+		t.Errorf("hostname = %v, want 0.0.0.0", g.Hostname)
+	}
+	if g.Secret == nil || *g.Secret != "s3cr3t" {
+		t.Errorf("secret = %v, want s3cr3t", g.Secret)
+	}
+	// {estro_env.X} is expanded at load; ${RUNTIME} is left for the shell.
+	cmd := res.Config.Sections[0].Services[0].Command
+	if len(cmd) != 1 || cmd[0] != "echo 0.0.0.0 ${RUNTIME}" {
+		t.Errorf("command = %v, want [echo 0.0.0.0 ${RUNTIME}]", cmd)
+	}
+}
+
+func TestExpandEstroEnvUnsetIsIssue(t *testing.T) {
+	_ = os.Unsetenv("ESTRO_UNSET_VAR_XYZ")
+	src := "global:\n  secret: \"{estro_env.ESTRO_UNSET_VAR_XYZ}\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo hi\n"
+	path := writeTestConfig(t, src)
+	defer func() { _ = os.Remove(path) }()
+	res := Load(path)
+	if res.Healthy() {
+		t.Fatal("expected an issue for the unset env var")
+	}
+	if !strings.Contains(strings.Join(res.IssueStrings(), "\n"), "ESTRO_UNSET_VAR_XYZ is not set") {
+		t.Errorf("expected unset-env issue, got %v", res.IssueStrings())
+	}
+}
+
 // TestUnknownKeyBehavior verifies that unknown YAML keys are detected by the
 // shape walk and reported as "invalid field" at every level, that x-* keys are
 // never reported, and that keys introduced via YAML merge (<<: *anchor) are
