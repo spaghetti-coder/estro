@@ -91,7 +91,7 @@
     });
   }
 
-  function showToast(message, type = 'info', { jobId, html, autoDismiss = false } = {}) {
+  function showToast(message, type = 'info', { jobId, html, autoDismiss = 0 } = {}) {
     const t = toastTpl.cloneNode(true).firstElementChild;
     if (type === 'success' || type === 'error') t.classList.add(type);
     t.querySelector('.toast-icon').textContent = TOAST_ICONS[type] || TOAST_ICONS.info;
@@ -109,8 +109,8 @@
     t.querySelector('.toast-close-btn').addEventListener('click', () => t.remove());
     attachSwipeToDismiss(t);
     toastsEl.appendChild(t);
-    if (autoDismiss) {
-      setTimeout(() => t.remove(), 5000);
+    if (autoDismiss > 0) {
+      setTimeout(() => t.remove(), autoDismiss * 1000);
     }
   }
 
@@ -599,6 +599,8 @@
 
   // --- Logs modal ---
 
+  const DEFAULT_AUTO_DISMISS_SEC = 3;
+
   function activateLogsTab(name) {
     logsTabBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
     logsStdoutEl.hidden = name !== 'stdout';
@@ -613,7 +615,7 @@
     if (navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(content);
-        showToast('Copied!', 'success', { autoDismiss: true });
+        showToast('Copied!', 'success', { autoDismiss: DEFAULT_AUTO_DISMISS_SEC });
         return;
       } catch (err) {
         console.error('Clipboard API failed:', err);
@@ -632,7 +634,7 @@
       document.body.removeChild(textarea);
       
       if (success) {
-        showToast('Copied!', 'success', { autoDismiss: true });
+        showToast('Copied!', 'success', { autoDismiss: DEFAULT_AUTO_DISMISS_SEC });
       } else {
         showToast('Failed to copy', 'error');
       }
