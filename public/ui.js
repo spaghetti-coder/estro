@@ -470,17 +470,17 @@
       renderedSections = [];
       const { sectionOrder, sectionMap, sectionsAllDisabled } = groupServicesBySection(services, showDisabled);
       for (const key of sectionOrder) {
-        if (key) {
-          const { meta, allDisabled } = sectionsAllDisabled[key];
-          const section = renderSection(key, sectionMap[key], meta.collapsable !== false, meta.columns || 3);
-          if (allDisabled) {
-            section.wrapper.classList.add('section-disabled');
-          }
-          buttonsEl.appendChild(section.wrapper);
-          renderedSections.push(section);
-        } else {
+        if (! key) {
           buttonsEl.append(...sectionMap[key]);
+          continue;
         }
+        const { meta, allDisabled } = sectionsAllDisabled[key];
+        const section = renderSection(key, sectionMap[key], meta.collapsable !== false, meta.columns || 3);
+        if (allDisabled) {
+          section.wrapper.classList.add('section-disabled');
+        }
+        buttonsEl.appendChild(section.wrapper);
+        renderedSections.push(section);
       }
     } catch (err) {
       console.error('Failed to load services:', err);
@@ -610,12 +610,14 @@
   async function copyLogs() {
     const activeTab = logsModalEl.querySelector('.logs-tab.active').dataset.tab;
     const content = activeTab === 'stdout' ? logsStdoutEl.textContent : logsStderrEl.textContent;
+    const successToast = ['Copied!', 'success', { autoDismiss: DEFAULT_AUTO_DISMISS_SEC }];
+    const failedToast = ['Failed to copy', 'error'];
     
     // Try modern Clipboard API first
     if (navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(content);
-        showToast('Copied!', 'success', { autoDismiss: DEFAULT_AUTO_DISMISS_SEC });
+        showToast(...successToast);
         return;
       } catch (err) {
         console.error('Clipboard API failed:', err);
@@ -634,13 +636,13 @@
       document.body.removeChild(textarea);
       
       if (success) {
-        showToast('Copied!', 'success', { autoDismiss: DEFAULT_AUTO_DISMISS_SEC });
-      } else {
-        showToast('Failed to copy', 'error');
+        showToast(...successToast);
+        return;
       }
+      showToast(...failedToast);
     } catch (err) {
       console.error('execCommand failed:', err);
-      showToast('Failed to copy', 'error');
+      showToast(...failedToast);
     }
   }
 
