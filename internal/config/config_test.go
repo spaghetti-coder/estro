@@ -9,7 +9,7 @@ import (
 
 func configPath() string {
 	_, thisFile, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(thisFile), "..", "..", "config.yaml")
+	return filepath.Join(filepath.Dir(thisFile), "testdata", "config.yaml")
 }
 
 func testConfigYAML() string {
