@@ -68,8 +68,29 @@ func tooManyLogins(c *echo.Context) error {
 	return errJSON(c, http.StatusTooManyRequests, "Too many login attempts")
 }
 
+// degradedIndexMiddleware returns middleware that overrides the response status
+// from 200 to 503 for GET / when the handler is in degraded mode.
+// All other requests and status codes pass through unchanged.
+func (h *Handler) degradedIndexMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if h.degraded && c.Request().Method == http.MethodGet && c.Request().URL.Path == "/" {
+				if resp, ok := c.Response().(*echo.Response); ok {
+					resp.Before(func() {
+						if resp.Status == http.StatusOK {
+							resp.Status = http.StatusServiceUnavailable
+						}
+					})
+				}
+			}
+			return next(c)
+		}
+	}
+}
+
 // RegisterRoutes registers all HTTP routes on the given Echo instance.
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
+	e.Use(h.degradedIndexMiddleware())
 	loginLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Skipper: middleware.DefaultSkipper,
 		Store: middleware.NewRateLimiterMemoryStoreWithConfig(

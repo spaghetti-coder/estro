@@ -763,6 +763,70 @@ func degradedEnv(t *testing.T) *echo.Echo {
 	return e
 }
 
+func TestDegradedIndexReturns503(t *testing.T) {
+	e := degradedEnv(t)
+	// Simulate the static file handler serving index.html with status 200.
+	e.GET("/", func(c *echo.Context) error {
+		return c.String(http.StatusOK, "<html>index</html>")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for GET / in degraded mode, got %d", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "<html>index</html>") {
+		t.Errorf("expected page content to be served, got %q", body)
+	}
+}
+
+func TestDegradedIndexOtherPathsNotAffected(t *testing.T) {
+	e := degradedEnv(t)
+	e.GET("/other", func(c *echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/other", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-index path in degraded mode, got %d", rec.Code)
+	}
+}
+
+func TestDegradedIndexNon200NotOverridden(t *testing.T) {
+	e := degradedEnv(t)
+	e.GET("/", func(c *echo.Context) error {
+		return c.String(http.StatusNotFound, "not found")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 to remain unchanged, got %d", rec.Code)
+	}
+}
+
+func TestHealthyIndexReturns200(t *testing.T) {
+	e, _, _, _ := setupTestEnv(t)
+	e.GET("/", func(c *echo.Context) error {
+		return c.String(http.StatusOK, "<html>index</html>")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET / in healthy mode, got %d", rec.Code)
+	}
+}
+
 func TestHealthzDegraded(t *testing.T) {
 	e := degradedEnv(t)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
