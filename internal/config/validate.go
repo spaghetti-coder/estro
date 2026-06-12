@@ -150,9 +150,10 @@ func tagMessage(tag string) string {
 	return "invalid value"
 }
 
-// validateStruct runs validator/v10 over the resolved config and maps each
-// failure to an Issue with a display path.
-func validateStruct(cfg *Config) []Issue {
+// Validate runs structural and value validation on the resolved Config,
+// returning any issues found. This is the validation half of Load, extracted
+// for use in tests that construct Config programmatically.
+func Validate(cfg *Config) []Issue {
 	err := validate.Struct(*cfg)
 	if err == nil {
 		return nil
@@ -171,7 +172,7 @@ func validateStruct(cfg *Config) []Issue {
 // collectIssues merges value errors and shape/unknown-key issues; dedupes per path.
 func collectIssues(cfg *Config, raw map[string]any) []Issue {
 	var issues []Issue
-	issues = append(issues, validateStruct(cfg)...)
+	issues = append(issues, Validate(cfg)...)
 	issues = append(issues, shapeIssues(raw)...)
 	return dedupeSort(issues)
 }

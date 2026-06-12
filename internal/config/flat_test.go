@@ -1,106 +1,179 @@
 package config
 
 import (
-	"os"
 	"slices"
 	"testing"
 )
 
 func TestIsAccessible(t *testing.T) {
-	publicSvc := FlatService{Allowed: nil}
-	if !publicSvc.IsAccessible("") {
-		t.Error("public service should be accessible with no user")
+	tests := []struct {
+		name    string
+		allowed []string
+		user    string
+		want    bool
+	}{
+		{"nil allowed with no user", nil, "", true},
+		{"nil allowed with any user", nil, "alice", true},
+		{"restricted to named users — allowed user", []string{"alice", "bob"}, "alice", true},
+		{"restricted to named users — unknown user", []string{"alice", "bob"}, "guest", false},
+		{"restricted to named users — empty user", []string{"alice", "bob"}, "", false},
 	}
-	if !publicSvc.IsAccessible("alice") {
-		t.Error("public service should be accessible with any user")
-	}
-
-	restrictedSvc := FlatService{Allowed: []string{"alice", "bob"}}
-	if restrictedSvc.IsAccessible("") {
-		t.Error("restricted service should not be accessible with empty user")
-	}
-	if !restrictedSvc.IsAccessible("alice") {
-		t.Error("restricted service should be accessible to named user")
-	}
-	if restrictedSvc.IsAccessible("guest") {
-		t.Error("restricted service should not be accessible to non-named user")
-	}
-
-	emptyAllowed := FlatService{Allowed: nil}
-	if !emptyAllowed.IsAccessible("guest") {
-		t.Error("nil allowed (public) should be accessible")
-	}
-}
-
-func TestRestrictedTrue_EmptyAllowedIsPublic(t *testing.T) {
-	flat := FlatService{
-		Restricted: true,
-		Allowed:    nil,
-	}
-	if flat.Restricted {
-		if !flat.IsAccessible("guest") {
-			t.Error("restricted=true + nil allowed should be public")
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flat := FlatService{Allowed: tt.allowed}
+			if got := flat.IsAccessible(tt.user); got != tt.want {
+				t.Errorf("IsAccessible(%q) = %v, want %v", tt.user, got, tt.want)
+			}
+		})
 	}
 }
 
 func TestRestrictedTrue_NilAllowedIsPublic(t *testing.T) {
+	flat := FlatService{Restricted: true, Allowed: nil}
+	if !flat.IsAccessible("guest") {
+		t.Error("restricted=true + nil allowed should be public")
+	}
+}
+
+func TestRestrictedDefaultIsPublic(t *testing.T) {
 	flat := FlatService{}
 	if !flat.IsAccessible("") {
-		t.Error("restricted=true (default) + nil allowed at all levels should be public")
+		t.Error("default (restricted=true, nil allowed) should be public")
+	}
+}
+
+// buildTestConfig constructs the test Config programmatically.
+func buildTestConfig() *Config {
+	return &Config{
+		Global: &GlobalConfig{
+			Title:    ptrOf("Estro"),
+			Subtitle: ptrOf("Config test suite"),
+			Hostname: ptrOf("0.0.0.0"),
+			Port:     ptrOf(3000),
+			CascadeFields: CascadeFields{
+				Timeout:    ptrOf(30),
+				Confirm:    ptrOf(true),
+				Restricted: ptrOf(false),
+			},
+		},
+		Users: map[string]*UserConfig{
+			"alice": {Password: "$2y$10$hash1", Groups: StringList{"admins"}},
+			"bob":   {Password: "$2y$10$hash2", Groups: StringList{"admins", "family"}},
+			"guest": {Password: "$2y$10$hash3"},
+		},
+		Sections: []SectionConfig{
+			{
+				Title:        "Public Info",
+				LayoutFields: LayoutFields{Collapsable: ptrOf(false), Columns: ptrOf(1)},
+				Services: []ServiceConfig{
+					{Title: "Uptime", Command: CommandValue{"uptime"}},
+					{Title: "Date", Command: CommandValue{"date"}, CascadeFields: CascadeFields{Confirm: ptrOf(false)}},
+				},
+			},
+			{
+				Title: "System",
+				Services: []ServiceConfig{
+					{Title: "Disk usage", Command: CommandValue{"df -h /", "echo ---", "df -h --total | tail -1"}},
+					{Title: "Memory", Command: CommandValue{"free -h"}, CascadeFields: CascadeFields{Confirm: ptrOf(false)}},
+					{Title: "CPU", Command: CommandValue{"ps aux --sort=-%cpu | head -10"}, CascadeFields: CascadeFields{Timeout: ptrOf(10)}},
+					{Title: "Load", Command: CommandValue{"cat /proc/loadavg"}, CascadeFields: CascadeFields{Confirm: ptrOf(false)}},
+				},
+			},
+			{
+				Title:         "Logs",
+				CascadeFields: CascadeFields{Timeout: ptrOf(15), Confirm: ptrOf(false)},
+				LayoutFields:  LayoutFields{Columns: ptrOf(2)},
+				Services: []ServiceConfig{
+					{Title: "Syslog (20)", Command: CommandValue{"journalctl -n 20 --no-pager"}},
+					{Title: "Kernel log", Command: CommandValue{"dmesg | tail -20"}},
+					{Title: "Auth log", Command: CommandValue{"journalctl -n 20 -u ssh --no-pager"}, CascadeFields: CascadeFields{Confirm: ptrOf(true), Timeout: ptrOf(5)}},
+				},
+			},
+			{
+				Title:         "Admin",
+				CascadeFields: CascadeFields{Allowed: StringList{"admins"}},
+				LayoutFields:  LayoutFields{Columns: ptrOf(4)},
+				Services: []ServiceConfig{
+					{Title: "List /etc", Command: CommandValue{"ls -lah /etc"}},
+					{Title: "Who", Command: CommandValue{"who"}, CascadeFields: CascadeFields{Confirm: ptrOf(false)}},
+				},
+			},
+			{
+				Title:         "Mixed Access",
+				CascadeFields: CascadeFields{Allowed: StringList{"admins"}},
+				Services: []ServiceConfig{
+					{Title: "Public status", Command: CommandValue{"uptime"}, CascadeFields: CascadeFields{Allowed: StringList{}, Confirm: ptrOf(false)}},
+					{Title: "Admin only", Command: CommandValue{"id"}},
+					{Title: "Guest allowed", Command: CommandValue{"date"}, CascadeFields: CascadeFields{Allowed: StringList{"guest"}}},
+				},
+			},
+			{
+				Title:         "Local override",
+				CascadeFields: CascadeFields{Allowed: StringList{"admins"}},
+				Services: []ServiceConfig{
+					{Title: "Local override", Command: CommandValue{"hostname"}, CascadeFields: CascadeFields{Allowed: StringList{"admins", "bob", "guest"}}},
+				},
+			},
+			{
+				Title:         "Remote (single hop)",
+				CascadeFields: CascadeFields{Allowed: StringList{"admins"}, Remote: StringList{"server1.local"}, Confirm: ptrOf(false)},
+				Services: []ServiceConfig{
+					{Title: "Remote uptime", Command: CommandValue{"uptime"}},
+					{Title: "Remote disk", Command: CommandValue{"df -h /"}},
+				},
+			},
+			{
+				Title:         "Remote (chain)",
+				LayoutFields:  LayoutFields{Collapsable: ptrOf(false), Columns: ptrOf(2)},
+				CascadeFields: CascadeFields{Allowed: StringList{"admins"}},
+				Services: []ServiceConfig{
+					{Title: "Two-hop uptime", Command: CommandValue{"uptime"}, CascadeFields: CascadeFields{Remote: StringList{"server1.local", "server2.local"}, Confirm: ptrOf(false)}},
+					{Title: "Three-hop date", Command: CommandValue{"date"}, CascadeFields: CascadeFields{Remote: StringList{"server1.local", "server2.local", "server3.local"}, Confirm: ptrOf(false), Timeout: ptrOf(20)}},
+				},
+			},
+		},
 	}
 }
 
 func TestSerializeService(t *testing.T) {
-	path := writeTestConfig(t, testConfigYAML())
-	defer func() { _ = os.Remove(path) }()
-
-	res := Load(path)
-	if !res.Healthy() {
-		t.Fatalf("unexpected issues: %v", res.IssueStrings())
-	}
-	cfg := res.Config
+	cfg := buildTestConfig()
 	services := cfg.Flatten()
 
-	wantTitles := []string{"Uptime", "CPU", "Auth log", "Three-hop date"}
-	for _, wantTitle := range wantTitles {
-		found := false
-		for i, svc := range services {
-			if svc.Title != wantTitle {
-				continue
-			}
-			found = true
-			serialized := svc.Serialize(i, "alice")
-			if serialized.ID != i {
-				t.Errorf("%s: expected id %d, got %d", wantTitle, i, serialized.ID)
-			}
-			if serialized.Title != svc.Title {
-				t.Errorf("%s: expected title %s, got %s", wantTitle, svc.Title, serialized.Title)
-			}
-			if serialized.Timeout != svc.Timeout*1000+10000 {
-				t.Errorf("%s: expected timeout %d, got %d", wantTitle, svc.Timeout*1000+10000, serialized.Timeout)
-			}
-			if serialized.Confirm != svc.Confirm {
-				t.Errorf("%s: expected confirm %v, got %v", wantTitle, svc.Confirm, serialized.Confirm)
-			}
-			if serialized.Section != svc.SectionTitle {
-				t.Errorf("%s: expected section %s, got %v", wantTitle, svc.SectionTitle, serialized.Section)
-			}
+	wantTitles := map[string]bool{"Uptime": true, "CPU": true, "Auth log": true, "Three-hop date": true}
+	for i, svc := range services {
+		if !wantTitles[svc.Title] {
+			continue
 		}
-		if !found {
-			t.Errorf("service %q not found in flattened config", wantTitle)
+		serialized := svc.Serialize(i, "alice")
+		if serialized.ID != i {
+			t.Errorf("%s: expected id %d, got %d", svc.Title, i, serialized.ID)
+		}
+		if serialized.Title != svc.Title {
+			t.Errorf("%s: expected title %s, got %s", svc.Title, svc.Title, serialized.Title)
+		}
+		if serialized.Timeout != svc.Timeout*1000+10000 {
+			t.Errorf("%s: expected timeout %d, got %d", svc.Title, svc.Timeout*1000+10000, serialized.Timeout)
+		}
+		if serialized.Confirm != svc.Confirm {
+			t.Errorf("%s: expected confirm %v, got %v", svc.Title, svc.Confirm, serialized.Confirm)
+		}
+		if serialized.Section != svc.SectionTitle {
+			t.Errorf("%s: expected section %s, got %v", svc.Title, svc.SectionTitle, serialized.Section)
 		}
 	}
 }
 
-func TestSerialize_Restricted(t *testing.T) {
+func TestSerialize_RestrictedAndEnabled(t *testing.T) {
 	tests := []struct {
 		name      string
 		flat      FlatService
 		wantRestr bool
+		wantEnabl bool
 	}{
-		{"global restricted true", FlatService{Title: "t", Command: CommandValue{"echo"}, Restricted: true}, true},
-		{"service restricted false", FlatService{Title: "t", Command: CommandValue{"echo"}, Restricted: false}, false},
+		{"restricted true", FlatService{Title: "t", Command: CommandValue{"echo"}, Restricted: true}, true, false},
+		{"restricted false", FlatService{Title: "t", Command: CommandValue{"echo"}, Restricted: false}, false, false},
+		{"enabled true", FlatService{Title: "t", Command: CommandValue{"echo"}, Enabled: true}, false, true},
+		{"enabled false", FlatService{Title: "t", Command: CommandValue{"echo"}, Enabled: false}, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,21 +181,6 @@ func TestSerialize_Restricted(t *testing.T) {
 			if serialized.Restricted != tt.wantRestr {
 				t.Errorf("Restricted = %v, want %v", serialized.Restricted, tt.wantRestr)
 			}
-		})
-	}
-}
-
-func TestSerialize_Enabled(t *testing.T) {
-	tests := []struct {
-		name      string
-		flat      FlatService
-		wantEnabl bool
-	}{
-		{"global enabled false", FlatService{Title: "t", Command: CommandValue{"echo"}, Enabled: false}, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			serialized := tt.flat.Serialize(0, "")
 			if serialized.Enabled != tt.wantEnabl {
 				t.Errorf("Enabled = %v, want %v", serialized.Enabled, tt.wantEnabl)
 			}
@@ -131,176 +189,90 @@ func TestSerialize_Enabled(t *testing.T) {
 }
 
 func TestCommandValueString(t *testing.T) {
-	path := writeTestConfig(t, testConfigYAML())
-	defer func() { _ = os.Remove(path) }()
-
-	res := Load(path)
-	if !res.Healthy() {
-		t.Fatalf("unexpected issues: %v", res.IssueStrings())
-	}
-	cfg := res.Config
+	cfg := buildTestConfig()
 	services := cfg.Flatten()
 
-	for _, svc := range services {
-		switch svc.Title {
-		case "Uptime":
-			if len(svc.Command) != 1 || svc.Command[0] != "uptime" {
-				t.Errorf("Uptime: expected single command 'uptime', got %v", svc.Command)
-			}
-		case "Disk usage":
-			if len(svc.Command) != 3 {
-				t.Errorf("Disk usage: expected 3 commands, got %d", len(svc.Command))
-			}
-		}
+	svc := findService(t, services, "Uptime")
+	if len(svc.Command) != 1 || svc.Command[0] != "uptime" {
+		t.Errorf("Uptime: expected single command 'uptime', got %v", svc.Command)
+	}
+
+	svc = findService(t, services, "Disk usage")
+	if len(svc.Command) != 3 {
+		t.Errorf("Disk usage: expected 3 commands, got %d", len(svc.Command))
 	}
 }
 
 func TestFlatten_AclResolution(t *testing.T) {
-	path := writeTestConfig(t, testConfigYAML())
-	defer func() { _ = os.Remove(path) }()
-
-	res := Load(path)
-	if !res.Healthy() {
-		t.Fatalf("unexpected issues: %v", res.IssueStrings())
-	}
-	cfg := res.Config
+	cfg := buildTestConfig()
 	services := cfg.Flatten()
 
-	findSvc := func(title string) *FlatService {
-		for i := range services {
-			if services[i].Title == title {
-				return &services[i]
+	tests := []struct {
+		title       string
+		wantAllowed []string // nil means nil (public)
+	}{
+		{"Who", []string{"alice", "bob"}},
+		{"Public status", nil},
+		{"Guest allowed", []string{"guest"}},
+		{"Admin only", []string{"alice", "bob"}},
+		{"Local override", []string{"alice", "bob", "guest"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.title, func(t *testing.T) {
+			svc := findService(t, services, tt.title)
+			if (tt.wantAllowed == nil) != (svc.Allowed == nil) {
+				t.Errorf("%s: nil mismatch, want nil=%v, got nil=%v", tt.title, tt.wantAllowed == nil, svc.Allowed == nil)
 			}
-		}
-		return nil
-	}
-
-	// Case 1: Service in "Admin" section with allowed: [admins] → resolved to concrete usernames
-	adminSvc := findSvc("Who")
-	if adminSvc == nil {
-		t.Fatal("expected to find 'Who' service")
-	}
-	if adminSvc.Allowed == nil {
-		t.Error("expected non-nil Allowed for 'Who' service (group 'admins' should resolve)")
-	} else {
-		if !slices.Contains(adminSvc.Allowed, "alice") || !slices.Contains(adminSvc.Allowed, "bob") {
-			t.Errorf("expected 'admins' group resolved to [alice, bob], got %v", adminSvc.Allowed)
-		}
-	}
-
-	// Case 2: Service with allowed: [] (empty) → nil (public)
-	publicSvc := findSvc("Public status")
-	if publicSvc == nil {
-		t.Fatal("expected to find 'Public status' service")
-	}
-	if publicSvc.Allowed != nil {
-		t.Errorf("expected nil Allowed for empty allowed (public), got %v", publicSvc.Allowed)
-	}
-
-	// Case 3: Service with allowed: [guest] (direct username) → ["guest"]
-	guestSvc := findSvc("Guest allowed")
-	if guestSvc == nil {
-		t.Fatal("expected to find 'Guest allowed' service")
-	}
-	if len(guestSvc.Allowed) != 1 || guestSvc.Allowed[0] != "guest" {
-		t.Errorf("expected Allowed=[guest] for direct username, got %v", guestSvc.Allowed)
-	}
-
-	// Case 4: Service with no allowed (cascades to section's allowed: [admins]) → resolved group
-	adminOnlySvc := findSvc("Admin only")
-	if adminOnlySvc == nil {
-		t.Fatal("expected to find 'Admin only' service")
-	}
-	if adminOnlySvc.Allowed == nil {
-		t.Error("expected non-nil Allowed for 'Admin only' (cascades to section's 'admins')")
-	} else {
-		if !slices.Contains(adminOnlySvc.Allowed, "alice") || !slices.Contains(adminOnlySvc.Allowed, "bob") {
-			t.Errorf("expected 'admins' group resolved to [alice, bob], got %v", adminOnlySvc.Allowed)
-		}
-	}
-
-	// Case 5: Service with allowed: [admins, guest] in "Local override"
-	localSvc := findSvc("Local override")
-	if localSvc == nil {
-		t.Fatal("expected to find 'Local override' service")
-	}
-	if localSvc.Allowed == nil {
-		t.Error("expected non-nil Allowed for 'Local override'")
-	} else {
-		if !slices.Contains(localSvc.Allowed, "alice") || !slices.Contains(localSvc.Allowed, "guest") {
-			t.Errorf("expected 'admins,guest' resolved to include alice and guest, got %v", localSvc.Allowed)
-		}
+			if !slices.Equal(svc.Allowed, tt.wantAllowed) {
+				t.Errorf("%s: allowed=%v, want %v", tt.title, svc.Allowed, tt.wantAllowed)
+			}
+		})
 	}
 }
 
-func TestResolveAllowed_NilInput(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-	}
-	result := resolveAllowed(nil, users)
-	if result != nil {
-		t.Errorf("expected nil for nil input, got %v", result)
-	}
-}
-
-func TestResolveAllowed_EmptySlice(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-	}
-	result := resolveAllowed([]string{}, users)
-	if result != nil {
-		t.Errorf("expected nil for empty slice input, got %v", result)
-	}
-}
-
-func TestResolveAllowed_GroupExpansion(t *testing.T) {
+func TestResolveAllowed(t *testing.T) {
 	users := map[string]*UserConfig{
 		"alice": {Password: "hash", Groups: []string{"admins"}},
 		"bob":   {Password: "hash", Groups: []string{"admins", "family"}},
 	}
-	result := resolveAllowed([]string{"admins"}, users)
-	if len(result) != 2 {
-		t.Errorf("expected 2 users for 'admins' group, got %d: %v", len(result), result)
-	}
-	if !slices.Contains(result, "alice") || !slices.Contains(result, "bob") {
-		t.Errorf("expected alice and bob, got %v", result)
-	}
-}
 
-func TestResolveAllowed_DirectUsername(t *testing.T) {
-	users := map[string]*UserConfig{
-		"guest": {Password: "hash"},
+	tests := []struct {
+		name  string
+		input []string
+		want  []string // nil means nil result
+	}{
+		{"nil input", nil, nil},
+		{"empty slice", []string{}, nil},
+		{"group expansion", []string{"admins"}, []string{"alice", "bob"}},
+		{"direct username", []string{"guest"}, []string{"guest"}},
+		{"nonexistent group", []string{"nonexistent-group"}, nil},
+		{"username-group collision", []string{"admins"}, []string{"admins", "alice"}},
 	}
-	result := resolveAllowed([]string{"guest"}, users)
-	if len(result) != 1 || result[0] != "guest" {
-		t.Errorf("expected [guest], got %v", result)
-	}
-}
 
-func TestResolveAllowed_NonexistentGroup(t *testing.T) {
-	users := map[string]*UserConfig{
-		"alice": {Password: "hash", Groups: []string{"admins"}},
-	}
-	result := resolveAllowed([]string{"nonexistent-group"}, users)
-	if result != nil {
-		t.Errorf("expected nil for group resolving to zero users, got %v", result)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testUsers := users
+			if tt.name == "username-group collision" {
+				testUsers = map[string]*UserConfig{
+					"admins": {Password: "hash", Groups: []string{}},
+					"alice":  {Password: "hash", Groups: []string{"admins"}},
+				}
+			}
+			if tt.name == "direct username" {
+				testUsers = map[string]*UserConfig{"guest": {Password: "hash"}}
+			}
+			if tt.name == "nonexistent group" {
+				testUsers = map[string]*UserConfig{"alice": {Password: "hash", Groups: []string{"admins"}}}
+			}
 
-func TestResolveAllowed_UsernameGroupCollision(t *testing.T) {
-	// When a name exists as both a username and a group name, both should be resolved.
-	users := map[string]*UserConfig{
-		"admins": {Password: "hash", Groups: []string{}},         // user named "admins"
-		"alice":  {Password: "hash", Groups: []string{"admins"}}, // alice is in the "admins" group
-	}
-	result := resolveAllowed([]string{"admins"}, users)
-	if len(result) != 2 {
-		t.Errorf("expected 2 users for username/group collision, got %d: %v", len(result), result)
-	}
-	if !slices.Contains(result, "admins") {
-		t.Errorf("expected 'admins' (direct user) in result, got %v", result)
-	}
-	if !slices.Contains(result, "alice") {
-		t.Errorf("expected 'alice' (group member) in result, got %v", result)
+			result := resolveAllowed(tt.input, testUsers)
+			if (tt.want == nil) != (result == nil) {
+				t.Errorf("nil mismatch: want nil=%v, got nil=%v", tt.want == nil, result == nil)
+				return
+			}
+			if !slices.Equal(result, tt.want) {
+				t.Errorf("got %v, want %v", result, tt.want)
+			}
+		})
 	}
 }

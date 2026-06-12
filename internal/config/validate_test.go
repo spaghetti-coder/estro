@@ -30,9 +30,8 @@ func TestAllowedRef(t *testing.T) {
 			cfg := Config{
 				Users: users,
 				Sections: []SectionConfig{{
-					Title:         "S",
-					CascadeFields: CascadeFields{Allowed: tt.allowed},
-					Services:      []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
+					Title: "S", CascadeFields: CascadeFields{Allowed: tt.allowed},
+					Services: []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
 				}},
 			}
 			err := validate.Struct(cfg)
@@ -70,9 +69,6 @@ func TestFormatPath(t *testing.T) {
 	}
 }
 
-// TestInlineSegReDerivedFromEmbeds locks in that the embedded-struct segments
-// stripped by formatPath are derived from the schema, so renaming or adding an
-// embedded struct can't silently leave stale segments in issue paths.
 func TestInlineSegReDerivedFromEmbeds(t *testing.T) {
 	names := embeddedStructNames(reflect.TypeOf(Config{}), map[reflect.Type]bool{})
 	if len(names) == 0 {
@@ -88,9 +84,6 @@ func TestInlineSegReDerivedFromEmbeds(t *testing.T) {
 	}
 }
 
-// TestSchemaShapeCoverage fails if any config field has a type the shape walk
-// (checkFieldShape) does not explicitly handle, forcing a conscious update when
-// an exotic field type is added.
 func TestSchemaShapeCoverage(t *testing.T) {
 	scalarKinds := map[reflect.Kind]bool{
 		reflect.String: true, reflect.Bool: true,
@@ -132,46 +125,38 @@ func TestSchemaShapeCoverage(t *testing.T) {
 	walk(reflect.TypeOf(Config{}))
 }
 
-// TestWrongTypeMergesToOneIssue pins that a wrong-typed field yields exactly one
-// issue (the shape "invalid value" subsumes any consequent validator "required"),
-// keeping the two passes' path formats in agreement.
 func TestWrongTypeMergesToOneIssue(t *testing.T) {
-	withSvc := "\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
+	svc := "\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
 	tests := []struct{ name, src, path string }{
 		{"required slice given a map", "sections: {a: b}\n", "sections"},
-		{"global scalar given a map", "global:\n  port: {a: b}" + withSvc, "global.port"},
-		{"global stringlist given a map", "global:\n  allowed: {a: b}" + withSvc, "global.allowed"},
+		{"global scalar given a map", "global:\n  port: {a: b}" + svc, "global.port"},
+		{"global stringlist given a map", "global:\n  allowed: {a: b}" + svc, "global.allowed"},
 		{"section cascade field given a map", "sections:\n  - title: S\n    timeout: {a: b}\n    services:\n      - title: T\n        command: echo\n", "sections[0].timeout"},
 		{"service field given a map", "sections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n        timeout: {a: b}\n", "sections[0].services[0].timeout"},
-		{"user map entry given a map", "users:\n  bob:\n    password: x\n    groups: {a: b}" + withSvc, "users.bob.groups"},
+		{"user map entry given a map", "users:\n  bob:\n    password: x\n    groups: {a: b}" + svc, "users.bob.groups"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := writeTestConfig(t, tt.src)
-			defer func() { _ = os.Remove(path) }()
+			issues := loadIssues(t, tt.src)
 			n := 0
-			for _, is := range Load(path).Issues {
+			for _, is := range issues {
 				if is.Path == tt.path {
 					n++
 				}
 			}
 			if n != 1 {
-				t.Errorf("expected exactly one issue at %q, got %d (all: %v)", tt.path, n, Load(path).IssueStrings())
+				t.Errorf("expected exactly one issue at %q, got %d", tt.path, n)
 			}
 		})
 	}
 }
 
-// TestLoadPopulatesValidFieldsDespiteTypeError guards the intentionally-ignored
-// decode error in Load: a wrong-typed field must not stop valid sibling fields
-// from populating (so validateStruct still sees real values).
 func TestLoadPopulatesValidFieldsDespiteTypeError(t *testing.T) {
 	src := "global:\n  title: MyApp\n  port: {a: b}\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	g := Load(path).Config.Global
+	res := Load(writeTestConfig(t, src))
+	g := res.Config.Global
 	if g == nil || g.Title == nil || *g.Title != "MyApp" {
-		t.Fatalf("expected global.title=MyApp to populate despite a sibling type error, got %+v", g)
+		t.Fatalf("expected global.title=MyApp, got %+v", g)
 	}
 }
 
@@ -182,9 +167,7 @@ func TestExpandEstroEnv(t *testing.T) {
 		"  hostname: \"{estro_env.ESTRO_TEST_HOST}\"\n" +
 		"  secret: \"{estro_env.ESTRO_TEST_SECRET}\"\n" +
 		"sections:\n  - title: S\n    services:\n      - title: T\n        command: echo {estro_env.ESTRO_TEST_HOST} ${RUNTIME}\n"
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
+	res := Load(writeTestConfig(t, src))
 	if !res.Healthy() {
 		t.Fatalf("expected healthy, got %v", res.IssueStrings())
 	}
@@ -195,7 +178,6 @@ func TestExpandEstroEnv(t *testing.T) {
 	if g.Secret == nil || *g.Secret != "s3cr3t" {
 		t.Errorf("secret = %v, want s3cr3t", g.Secret)
 	}
-	// {estro_env.X} is expanded at load; ${RUNTIME} is left for the shell.
 	cmd := res.Config.Sections[0].Services[0].Command
 	if len(cmd) != 1 || cmd[0] != "echo 0.0.0.0 ${RUNTIME}" {
 		t.Errorf("command = %v, want [echo 0.0.0.0 ${RUNTIME}]", cmd)
@@ -205,21 +187,12 @@ func TestExpandEstroEnv(t *testing.T) {
 func TestExpandEstroEnvUnsetIsIssue(t *testing.T) {
 	_ = os.Unsetenv("ESTRO_UNSET_VAR_XYZ")
 	src := "global:\n  secret: \"{estro_env.ESTRO_UNSET_VAR_XYZ}\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo hi\n"
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
-	if res.Healthy() {
-		t.Fatal("expected an issue for the unset env var")
-	}
-	if !strings.Contains(strings.Join(res.IssueStrings(), "\n"), "ESTRO_UNSET_VAR_XYZ is not set") {
-		t.Errorf("expected unset-env issue, got %v", res.IssueStrings())
+	strs := loadIssueStrings(t, src)
+	if !strings.Contains(strings.Join(strs, "\n"), "ESTRO_UNSET_VAR_XYZ is not set") {
+		t.Errorf("expected unset-env issue, got %v", strs)
 	}
 }
 
-// TestUnknownKeyBehavior verifies that unknown YAML keys are detected by the
-// shape walk and reported as "invalid field" at every level, that x-* keys are
-// never reported, and that keys introduced via YAML merge (<<: *anchor) are
-// caught at the use site.
 func TestUnknownKeyBehavior(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -227,105 +200,31 @@ func TestUnknownKeyBehavior(t *testing.T) {
 		wantPaths []string // paths that must carry "invalid field"
 		notPaths  []string // paths that must NOT appear
 	}{
-		{
-			name:      "top-level typo",
-			src:       "sektions: 1\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n",
-			wantPaths: []string{"sektions"},
-		},
-		{
-			name:      "global typo",
-			src:       "global:\n  titl: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n",
-			wantPaths: []string{"global.titl"},
-		},
-		{
-			name: "service typo",
-			src: `sections:
-  - title: S
-    services:
-      - title: T
-        command: echo
-        comand: typo
-`,
-			wantPaths: []string{"sections[0].services[0].comand"},
-		},
-		{
-			name: "user typo",
-			src: `users:
-  bob:
-    password: x
-    pasword: y
-sections:
-  - title: S
-    services:
-      - title: T
-        command: echo
-`,
-			wantPaths: []string{"users.bob.pasword"},
-		},
-		{
-			name: "bad key merged via anchor at global level",
-			src: `x-anchor: &a
-  hstnm: bad
-global:
-  <<: *a
-sections:
-  - title: S
-    services:
-      - title: T
-        command: echo
-`,
-			wantPaths: []string{"global.hstnm"},
-		},
-		{
-			name: "x-* keys are NOT reported",
-			src: `x-top: anything
-global:
-  x-note: ok
-sections:
-  - title: S
-    x-section: ok
-    services:
-      - title: T
-        command: echo
-        x-svc: ok
-`,
-			wantPaths: nil,
-			notPaths:  []string{"x-top", "global.x-note", "sections[0].x-section", "sections[0].services[0].x-svc"},
-		},
-		{
-			name: "section typo",
-			src: `sections:
-  - title: S
-    sektion_typo: 1
-    services:
-      - title: T
-        command: echo
-`,
-			wantPaths: []string{"sections[0].sektion_typo"},
-		},
+		{"top-level typo", "sektions: 1\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"sektions"}, nil},
+		{"global typo", "global:\n  titl: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"global.titl"}, nil},
+		{"service typo", "sections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n        comand: typo\n", []string{"sections[0].services[0].comand"}, nil},
+		{"user typo", "users:\n  bob:\n    password: x\n    pasword: y\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"users.bob.pasword"}, nil},
+		{"bad key merged via anchor", "x-anchor: &a\n  hstnm: bad\nglobal:\n  <<: *a\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"global.hstnm"}, nil},
+		{"x-* keys NOT reported", "x-top: anything\nglobal:\n  x-note: ok\nsections:\n  - title: S\n    x-section: ok\n    services:\n      - title: T\n        command: echo\n        x-svc: ok\n", nil, []string{"x-top", "global.x-note", "sections[0].x-section", "sections[0].services[0].x-svc"}},
+		{"section typo", "sections:\n  - title: S\n    sektion_typo: 1\n    services:\n      - title: T\n        command: echo\n", []string{"sections[0].sektion_typo"}, nil},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := writeTestConfig(t, tt.src)
-			defer func() { _ = os.Remove(path) }()
-			res := Load(path)
-
+			issues := loadIssues(t, tt.src)
 			for _, wantPath := range tt.wantPaths {
 				found := false
-				for _, is := range res.Issues {
+				for _, is := range issues {
 					if is.Path == wantPath && is.Msg == "invalid field" {
 						found = true
 						break
 					}
 				}
 				if !found {
-					t.Errorf("expected issue {Path:%q, Msg:\"invalid field\"}, got: %v", wantPath, res.Issues)
+					t.Errorf("expected issue {Path:%q, Msg:\"invalid field\"}, got: %v", wantPath, issues)
 				}
 			}
-
 			for _, notPath := range tt.notPaths {
-				for _, is := range res.Issues {
+				for _, is := range issues {
 					if is.Path == notPath {
 						t.Errorf("unexpected issue at %q: %v", notPath, is)
 					}
@@ -339,7 +238,7 @@ func TestDedupeSort(t *testing.T) {
 	in := []Issue{
 		{Path: "b", Msg: "x"},
 		{Path: "a", Msg: "y"},
-		{Path: "a", Msg: "y"}, // dup
+		{Path: "a", Msg: "y"},
 	}
 	got := dedupeSort(in)
 	if len(got) != 2 || got[0].Path != "a" || got[1].Path != "b" {
@@ -347,108 +246,43 @@ func TestDedupeSort(t *testing.T) {
 	}
 }
 
-// ptrOf returns a pointer to v; used in table-driven constraint tests.
 func ptrOf[T any](v T) *T { return &v }
 
-// TestValueConstraints verifies that individual field constraints are enforced
-// by the validator and that a fully-valid minimal Config passes without error.
 func TestValueConstraints(t *testing.T) {
-	// minimalValid returns a minimal valid Config used as a starting point.
 	minimalValid := func() Config {
 		return Config{
 			Sections: []SectionConfig{{
-				Title:    "S",
-				Services: []ServiceConfig{{Title: "T", Command: CommandValue{"echo"}}},
+				Title: "S", Services: []ServiceConfig{{Title: "T", Command: CommandValue{"echo"}}},
 			}},
 		}
 	}
 
-	// rejected holds cases expected to fail validation.
 	rejected := []struct {
 		name string
 		cfg  Config
 	}{
-		{
-			name: "port zero",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Global = &GlobalConfig{Port: ptrOf(0)}
-				return c
-			}(),
-		},
-		{
-			name: "port too large",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Global = &GlobalConfig{Port: ptrOf(70000)}
-				return c
-			}(),
-		},
-		{
-			name: "columns zero",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Global = &GlobalConfig{LayoutFields: LayoutFields{Columns: ptrOf(0)}}
-				return c
-			}(),
-		},
-		{
-			name: "columns too large",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Global = &GlobalConfig{LayoutFields: LayoutFields{Columns: ptrOf(13)}}
-				return c
-			}(),
-		},
-		{
-			name: "invalid hostname",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Global = &GlobalConfig{Hostname: ptrOf("not a host!")}
-				return c
-			}(),
-		},
-		{
-			name: "command empty slice",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Sections[0].Services[0].Command = CommandValue{}
-				return c
-			}(),
-		},
-		{
-			name: "command empty element",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Sections[0].Services[0].Command = CommandValue{""}
-				return c
-			}(),
-		},
-		{
-			name: "no sections",
-			cfg: Config{
-				Sections: nil,
-			},
-		},
-		{
-			name: "section with no services",
-			cfg: Config{
-				Sections: []SectionConfig{{
-					Title:    "S",
-					Services: nil,
-				}},
-			},
-		},
-		{
-			name: "user with empty password",
-			cfg: func() Config {
-				c := minimalValid()
-				c.Users = map[string]*UserConfig{
-					"alice": {Password: ""},
-				}
-				return c
-			}(),
-		},
+		{"port zero", func() Config { c := minimalValid(); c.Global = &GlobalConfig{Port: ptrOf(0)}; return c }()},
+		{"port too large", func() Config { c := minimalValid(); c.Global = &GlobalConfig{Port: ptrOf(70000)}; return c }()},
+		{"columns zero", func() Config {
+			c := minimalValid()
+			c.Global = &GlobalConfig{LayoutFields: LayoutFields{Columns: ptrOf(0)}}
+			return c
+		}()},
+		{"columns too large", func() Config {
+			c := minimalValid()
+			c.Global = &GlobalConfig{LayoutFields: LayoutFields{Columns: ptrOf(13)}}
+			return c
+		}()},
+		{"invalid hostname", func() Config { c := minimalValid(); c.Global = &GlobalConfig{Hostname: ptrOf("not a host!")}; return c }()},
+		{"command empty slice", func() Config { c := minimalValid(); c.Sections[0].Services[0].Command = CommandValue{}; return c }()},
+		{"command empty element", func() Config { c := minimalValid(); c.Sections[0].Services[0].Command = CommandValue{""}; return c }()},
+		{"no sections", Config{}},
+		{"section with no services", Config{Sections: []SectionConfig{{Title: "S", Services: nil}}}},
+		{"user with empty password", func() Config {
+			c := minimalValid()
+			c.Users = map[string]*UserConfig{"alice": {Password: ""}}
+			return c
+		}()},
 	}
 
 	for _, tt := range rejected {
@@ -461,21 +295,9 @@ func TestValueConstraints(t *testing.T) {
 
 	t.Run("valid minimal config", func(t *testing.T) {
 		cfg := Config{
-			Global: &GlobalConfig{
-				Hostname:     ptrOf("0.0.0.0"),
-				Port:         ptrOf(3000),
-				LayoutFields: LayoutFields{Columns: ptrOf(3)},
-			},
-			Users: map[string]*UserConfig{
-				"alice": {Password: "secret"},
-			},
-			Sections: []SectionConfig{{
-				Title: "S",
-				Services: []ServiceConfig{{
-					Title:   "T",
-					Command: CommandValue{"echo hello"},
-				}},
-			}},
+			Global:   &GlobalConfig{Hostname: ptrOf("0.0.0.0"), Port: ptrOf(3000), LayoutFields: LayoutFields{Columns: ptrOf(3)}},
+			Users:    map[string]*UserConfig{"alice": {Password: "secret"}},
+			Sections: []SectionConfig{{Title: "S", Services: []ServiceConfig{{Title: "T", Command: CommandValue{"echo hello"}}}}},
 		}
 		if err := validate.Struct(cfg); err != nil {
 			t.Errorf("expected valid config to pass, got: %v", err)
@@ -495,20 +317,8 @@ sections:
         command: echo
         titl: typo
 `
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-
-	res := Load(path)
-	if res.Healthy() {
-		t.Fatal("expected issues")
-	}
-	if res.Config == nil {
-		t.Fatal("Config must always be non-nil")
-	}
-	joined := ""
-	for _, s := range res.IssueStrings() {
-		joined += s + "\n"
-	}
+	strs := loadIssueStrings(t, src)
+	joined := strings.Join(strs, "\n")
 	for _, want := range []string{
 		"`global.columns` invalid value",
 		"`global.hostname` invalid value",
@@ -546,24 +356,16 @@ sections:
         command: echo
         x-svc-note: ok
 `
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
+	res := Load(writeTestConfig(t, src))
 	if !res.Healthy() {
-		t.Fatalf("expected healthy (x-* valid everywhere), got: %v", res.IssueStrings())
+		t.Fatalf("expected healthy, got: %v", res.IssueStrings())
 	}
 }
 
 func TestLoadEmptyFile(t *testing.T) {
-	path := writeTestConfig(t, "   \n")
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
-	if res.Healthy() {
-		t.Fatal("expected issues for empty file")
-	}
-	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`sections` required" {
-		t.Errorf("expected exactly [`sections` required], got %v", got)
+	strs := loadIssueStrings(t, "   \n")
+	if len(strs) != 1 || strs[0] != "`sections` required" {
+		t.Errorf("expected [`sections` required], got %v", strs)
 	}
 }
 
@@ -571,9 +373,8 @@ func TestAllowedRefZeroMemberGroup(t *testing.T) {
 	cfg := Config{
 		Users: map[string]*UserConfig{"alice": {Password: "x", Groups: StringList{"admins"}}},
 		Sections: []SectionConfig{{
-			Title:         "S",
-			CascadeFields: CascadeFields{Allowed: StringList{"editors"}}, // no user has group "editors"
-			Services:      []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
+			Title: "S", CascadeFields: CascadeFields{Allowed: StringList{"editors"}},
+			Services: []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
 		}},
 	}
 	if err := validate.Struct(cfg); err == nil {
@@ -590,7 +391,7 @@ func TestServerAddrPortFallback(t *testing.T) {
 		{"valid port", &Config{Global: &GlobalConfig{Port: ptrOf(8080)}}, "127.0.0.1:8080"},
 		{"valid host and port", &Config{Global: &GlobalConfig{Hostname: ptrOf("0.0.0.0"), Port: ptrOf(8080)}}, "0.0.0.0:8080"},
 		{"out-of-range port", &Config{Global: &GlobalConfig{Port: ptrOf(99999)}}, "127.0.0.1:3000"},
-		{"zero port (type-mismatch resolved)", &Config{Global: &GlobalConfig{Port: ptrOf(0)}}, "127.0.0.1:3000"},
+		{"zero port", &Config{Global: &GlobalConfig{Port: ptrOf(0)}}, "127.0.0.1:3000"},
 		{"no global", &Config{}, "127.0.0.1:3000"},
 	}
 	for _, tt := range tests {
@@ -604,10 +405,7 @@ func TestServerAddrPortFallback(t *testing.T) {
 }
 
 func TestServerAddrInvalidHostnameFallback(t *testing.T) {
-	// An invalid-format hostname is flagged by validation; ServerAddr must default it.
-	path := writeTestConfig(t, "global:\n  hostname: \"not a host\"\n")
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
+	res := Load(writeTestConfig(t, "global:\n  hostname: \"not a host\"\n"))
 	if !res.hasIssue("global.hostname") {
 		t.Fatalf("expected a global.hostname issue, got %v", res.IssueStrings())
 	}
@@ -617,38 +415,27 @@ func TestServerAddrInvalidHostnameFallback(t *testing.T) {
 }
 
 func TestLoadTypeMismatchPortFallsBackTo3000(t *testing.T) {
-	path := writeTestConfig(t, "global:\n  port: \"abc\"\n  columns: \"xyz\"\n")
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
+	res := Load(writeTestConfig(t, "global:\n  port: \"abc\"\n  columns: \"xyz\"\n"))
 	if res.Healthy() {
 		t.Fatal("expected degraded result for type mismatches")
 	}
-	// Both type errors surface in one pass; pin that the config is unhealthy
-	// and the bind address still falls back to the default port.
 	if got := res.ServerAddr(); got != "127.0.0.1:3000" {
-		t.Errorf("ServerAddr() = %q, want 127.0.0.1:3000 for a wrong-type port", got)
+		t.Errorf("ServerAddr() = %q, want 127.0.0.1:3000", got)
 	}
 }
 
 func TestLoadWrongShapeTopLevel(t *testing.T) {
-	path := writeTestConfig(t, "sections: 123\n") // sections present but wrong shape
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
-	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`sections` invalid value" {
-		t.Errorf("got %v, want [`sections` invalid value]", got)
+	strs := loadIssueStrings(t, "sections: 123\n")
+	if len(strs) != 1 || strs[0] != "`sections` invalid value" {
+		t.Errorf("got %v, want [`sections` invalid value]", strs)
 	}
 }
 
 func TestLoadWrongTypeScalarIsInvalidValue(t *testing.T) {
-	// port given a non-int scalar: exactly one "invalid value" (not also "required")
 	src := "global:\n  port: \"abc\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
-	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`global.port` invalid value" {
-		t.Errorf("got %v, want [`global.port` invalid value]", got)
+	strs := loadIssueStrings(t, src)
+	if len(strs) != 1 || strs[0] != "`global.port` invalid value" {
+		t.Errorf("got %v, want [`global.port` invalid value`]", strs)
 	}
 }
 
@@ -662,29 +449,15 @@ func TestDedupeSortPerPathPriority(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected 2 issues, got %v", got)
 	}
-	// global.port keeps "invalid value" (rank 0 < "required" rank 1).
 	if got[0].Path != "global.port" || got[0].Msg != "invalid value" {
 		t.Errorf("got[0] = %+v, want {global.port invalid value}", got[0])
 	}
 }
 
 func TestLoadRejectsEmptyStringListElement(t *testing.T) {
-	src := `
-sections:
-  - title: S
-    remote: 'h1,,h2'
-    services:
-      - title: T
-        command: echo
-`
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-
-	res := Load(path)
-	if res.Healthy() {
-		t.Fatal("expected an issue for the empty remote element")
-	}
-	joined := strings.Join(res.IssueStrings(), "\n")
+	src := "sections:\n  - title: S\n    remote: 'h1,,h2'\n    services:\n      - title: T\n        command: echo\n"
+	strs := loadIssueStrings(t, src)
+	joined := strings.Join(strs, "\n")
 	if !strings.Contains(joined, "remote[1]") {
 		t.Errorf("expected an issue mentioning remote[1], got:\n%s", joined)
 	}
@@ -692,28 +465,22 @@ sections:
 
 func TestLoadXStarAnchorMergeNoLeak(t *testing.T) {
 	src := "x-foo: &foo\n  timeout: fff\nglobal:\n  <<: *foo\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
-	got := res.IssueStrings()
-	for _, s := range got {
+	strs := loadIssueStrings(t, src)
+	for _, s := range strs {
 		if strings.Contains(s, "x-foo") {
-			t.Errorf("issue leaks x-* anchor internals: %q (all: %v)", s, got)
+			t.Errorf("issue leaks x-* anchor internals: %q (all: %v)", s, strs)
 		}
 	}
-	if len(got) != 1 || got[0] != "`global.timeout` invalid value" {
-		t.Errorf("got %v, want [`global.timeout` invalid value]", got)
+	if len(strs) != 1 || strs[0] != "`global.timeout` invalid value" {
+		t.Errorf("got %v, want [`global.timeout` invalid value`]", strs)
 	}
 }
 
 func TestLoadHostnameWrongShapeIsInvalidValueOnce(t *testing.T) {
 	src := "global:\n  hostname: [foobar]\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	path := writeTestConfig(t, src)
-	defer func() { _ = os.Remove(path) }()
-	res := Load(path)
-	got := res.IssueStrings()
-	if len(got) != 1 || got[0] != "`global.hostname` invalid value" {
-		t.Errorf("got %v, want [`global.hostname` invalid value]", got)
+	strs := loadIssueStrings(t, src)
+	if len(strs) != 1 || strs[0] != "`global.hostname` invalid value" {
+		t.Errorf("got %v, want [`global.hostname` invalid value`]", strs)
 	}
 }
 
@@ -749,7 +516,6 @@ func TestShapeIssues(t *testing.T) {
 		{"global wrong shape", "global: 123\n", []string{"`global` invalid value"}},
 		{"null scalar ok", "global:\n  port:\n", nil},
 		{"valid config", "global:\n  port: 3000\nusers:\n  a:\n    password: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", nil},
-		// Unknown-key detection via shape walk.
 		{"top-level unknown key", "sektions: 1\n", []string{"`sektions` invalid field"}},
 		{"global unknown key", "global:\n  titl: x\n", []string{"`global.titl` invalid field"}},
 		{"x-* key not flagged", "x-top: 1\nglobal:\n  x-note: ok\n", nil},
