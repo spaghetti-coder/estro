@@ -7,16 +7,13 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// StringList is a YAML-aware string list type that deserializes from either
-// a comma-separated scalar (e.g., "alice,bob") or a YAML sequence (e.g., [alice, bob]).
-// When used in ACL contexts, nil means public access, while an empty slice also means public.
+// StringList deserializes from comma-separated scalar or YAML sequence; nil/empty = public in ACL.
 type StringList []string
 
-// CommandValue represents a shell command, which can be a single string
-// or an array of commands joined with "&&" in YAML.
+// CommandValue is a shell command: single string or array.
 type CommandValue []string
 
-// CascadeFields holds fields that cascade: global → section → service.
+// CascadeFields holds global → section → service cascade fields.
 type CascadeFields struct {
 	Timeout       *int       `yaml:"timeout" validate:"omitempty,gt=0"`
 	Confirm       *bool      `yaml:"confirm"`
@@ -27,7 +24,7 @@ type CascadeFields struct {
 	Restricted    *bool      `yaml:"restricted"`
 }
 
-// LayoutFields holds fields that cascade: global → section (not service-level).
+// LayoutFields holds global → section layout fields.
 type LayoutFields struct {
 	Collapsable *bool `yaml:"collapsable"`
 	Columns     *int  `yaml:"columns" validate:"omitempty,gte=1,lte=12"`
@@ -80,7 +77,7 @@ func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-// cascade returns the first non-nil pointer value among svc, sec, global, or defaultVal if all are nil.
+// cascade returns first non-nil of svc, sec, global; defaultVal if all nil.
 func cascade[T any](svc, sec, global *T, defaultVal T) T {
 	if svc != nil {
 		return *svc
@@ -94,8 +91,7 @@ func cascade[T any](svc, sec, global *T, defaultVal T) T {
 	return defaultVal
 }
 
-// cascadeLayout resolves a layout field that cascades section → global only
-// (there is no service level), falling back to defaultVal.
+// cascadeLayout resolves section → global; no service level.
 func cascadeLayout[T any](sec, global *T, defaultVal T) T {
 	return cascade(nil, sec, global, defaultVal)
 }

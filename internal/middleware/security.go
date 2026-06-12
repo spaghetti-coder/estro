@@ -5,6 +5,7 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// SecurityMiddleware sets standard security headers.
 func SecurityMiddleware(csp string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -17,6 +18,7 @@ func SecurityMiddleware(csp string) echo.MiddlewareFunc {
 	}
 }
 
+// FaviconCORS allows favicon to be loaded from other origins.
 func FaviconCORS() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {

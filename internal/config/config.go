@@ -25,14 +25,14 @@ const (
 	defaultColumns     = 3
 )
 
-// Config represents the top-level Estro configuration loaded from YAML.
+// Config is the top-level Estro YAML configuration.
 type Config struct {
 	Global   *GlobalConfig          `yaml:"global" validate:"omitempty"`
 	Users    map[string]*UserConfig `yaml:"users" validate:"omitempty,dive"`
 	Sections []SectionConfig        `yaml:"sections" validate:"required,min=1,dive"`
 }
 
-// GlobalConfig holds settings that apply across all sections and services.
+// GlobalConfig holds cross-section settings.
 type GlobalConfig struct {
 	Title         *string `yaml:"title"`
 	Subtitle      *string `yaml:"subtitle"`
@@ -43,13 +43,13 @@ type GlobalConfig struct {
 	LayoutFields  `yaml:",inline"`
 }
 
-// UserConfig defines a single user's credentials and group memberships.
+// UserConfig holds a user's password and groups.
 type UserConfig struct {
 	Password string     `yaml:"password" validate:"required"`
 	Groups   StringList `yaml:"groups" validate:"omitempty,dive,required"`
 }
 
-// SectionConfig groups services under a common heading in the UI.
+// SectionConfig groups services under a UI heading.
 type SectionConfig struct {
 	Title         string          `yaml:"title" validate:"required"`
 	Services      []ServiceConfig `yaml:"services" validate:"required,min=1,dive"`
@@ -57,15 +57,14 @@ type SectionConfig struct {
 	LayoutFields  `yaml:",inline"`
 }
 
-// ServiceConfig defines a single runnable command exposed in the UI.
+// ServiceConfig is a single runnable command.
 type ServiceConfig struct {
 	Title         string       `yaml:"title" validate:"required"`
 	Command       CommandValue `yaml:"command" validate:"required,min=1,dive,required"`
 	CascadeFields `yaml:",inline"`
 }
 
-// validate is a package-level singleton validator instance to avoid
-// repeated allocation on every Load() call.
+// validate is a singleton validator, avoiding repeated allocation.
 var validate = func() *validator.Validate {
 	v := validator.New()
 	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
@@ -89,8 +88,7 @@ func init() {
 	}
 }
 
-// coalesce returns the value pointed to by ptr, or the provided fallback if ptr
-// is nil. It is the single-level case of cascade.
+// coalesce returns *ptr or fallback when nil; single-level cascade.
 func coalesce[T any](ptr *T, fallback T) T {
 	return cascade(ptr, nil, nil, fallback)
 }
@@ -100,14 +98,10 @@ func fileIssueResult(msg string) *LoadResult {
 	return &LoadResult{Config: &Config{}, Issues: []Issue{{Msg: msg}}}
 }
 
-// estroEnvRe matches the {estro_env.VAR} load-time substitution marker. The
-// shell form ${VAR} is intentionally NOT matched — it is left untouched for the
-// command's runtime shell.
+// estroEnvRe matches {estro_env.VAR}; ${VAR} is left for runtime shell.
 var estroEnvRe = regexp.MustCompile(`\{estro_env\.([A-Za-z_][A-Za-z0-9_]*)\}`)
 
-// expandEnv substitutes {estro_env.VAR} in every scalar value of the parsed
-// YAML with the environment variable's value, returning an issue for each
-// referenced variable that is not set.
+// expandEnv replaces {estro_env.VAR} in YAML scalars; issues for unset vars.
 func expandEnv(n *yaml.Node) []Issue {
 	var issues []Issue
 	var walk func(*yaml.Node)
@@ -130,10 +124,7 @@ func expandEnv(n *yaml.Node) []Issue {
 	return issues
 }
 
-// Load reads the YAML configuration at path and validates the resolved
-// configuration. {estro_env.VAR} markers are expanded from the environment
-// first. It never returns a fatal error: the result always carries a usable
-// Config (default-backed when degraded) plus any collected issues.
+// Load reads YAML at path, expands {estro_env.VAR}, validates; never fatal — usable Config + issues always.
 func Load(path string) *LoadResult {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -160,7 +151,7 @@ func Load(path string) *LoadResult {
 	return &LoadResult{Config: &cfg, Issues: dedupeSort(issues)}
 }
 
-// GetGlobal returns the global configuration, or a zero-valued GlobalConfig if none is set.
+// GetGlobal returns global config, or zero-value if unset.
 func (c *Config) GetGlobal() *GlobalConfig {
 	if c.Global != nil {
 		return c.Global
@@ -168,8 +159,7 @@ func (c *Config) GetGlobal() *GlobalConfig {
 	return &GlobalConfig{}
 }
 
-// GetConfigResponse returns a ConfigResponse with the application title, subtitle,
-// and sorted list of usernames for the frontend.
+// GetConfigResponse returns title, subtitle, sorted usernames for frontend.
 func (c *Config) GetConfigResponse() ConfigResponse {
 	g := c.GetGlobal()
 	return ConfigResponse{

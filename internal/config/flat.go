@@ -1,7 +1,6 @@
 package config
 
-// FlatService holds a service with its section and global fallbacks resolved
-// into a single flat struct. All cascading fields are pre-resolved in Flatten().
+// FlatService is a service with all cascades resolved.
 type FlatService struct {
 	Title   string
 	Command CommandValue
@@ -22,7 +21,7 @@ type FlatService struct {
 	SectionTitle string
 }
 
-// SerializedService is the JSON-ready representation of a service sent to the frontend.
+// SerializedService is the JSON-ready service for the frontend.
 type SerializedService struct {
 	ID                 int      `json:"id"`
 	Title              string   `json:"title"`
@@ -38,7 +37,7 @@ type SerializedService struct {
 	Restricted         bool     `json:"restricted"`
 }
 
-// ConfigResponse provides the application title, subtitle, and user list for the frontend.
+// ConfigResponse is title, subtitle, users for the frontend.
 type ConfigResponse struct {
 	Title    string   `json:"title"`
 	Subtitle string   `json:"subtitle"`
@@ -47,13 +46,10 @@ type ConfigResponse struct {
 	Issues   []string `json:"issues,omitempty"`
 }
 
-// clientTimeoutBuffer is the buffer (10s) added to the server-side timeout
-// to account for client-side overhead (network latency, UI rendering, polling delay).
-// This ensures the client doesn't timeout before the server completes.
+// clientTimeoutBuffer is 10s added to server timeout for client overhead.
 const clientTimeoutBuffer = 10000 // 10s buffer added to server-side timeout for client waits
 
-// Flatten expands all sections and services into a flat slice with cascade
-// fallbacks resolved inline for each service.
+// Flatten expands all services with cascades resolved inline.
 func (c *Config) Flatten() []FlatService {
 	total := 0
 	for _, section := range c.Sections {
@@ -85,8 +81,7 @@ func (c *Config) Flatten() []FlatService {
 	return services
 }
 
-// Serialize produces the JSON-ready representation of a service for the frontend,
-// resolving access control against the given username. ACL is pre-resolved during Flatten().
+// Serialize builds JSON-ready service view for username.
 func (s *FlatService) Serialize(index int, username string) SerializedService {
 	isPublic := s.Allowed == nil
 	return SerializedService{

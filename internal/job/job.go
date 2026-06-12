@@ -1,4 +1,4 @@
-// Package job provides an in-memory store for asynchronous command execution jobs.
+// Package job provides an in-memory store for async execution jobs.
 package job
 
 import (
@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-// Status constants for Job.Status.
+// Job statuses.
 const (
 	StatusRunning = "running"
 	StatusDone    = "done"
 	StatusError   = "error"
 )
 
-// Job represents the state and output of an asynchronous command execution.
+// Job holds status and output of async execution.
 type Job struct {
 	Status string `json:"status"`
 	Title  string `json:"title"`
@@ -24,14 +24,13 @@ type Job struct {
 	Stderr string `json:"stderr,omitempty"`
 }
 
-// Store is a thread-safe in-memory map of job IDs to Job values.
+// Store is a thread-safe map of jobs.
 type Store struct {
 	mu   sync.RWMutex
 	jobs map[string]*Job
 }
 
-// GenerateID creates a cryptographically random 32-character hex string
-// suitable for use as a job identifier.
+// GenerateID returns a random 32-char hex ID.
 func GenerateID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -40,7 +39,7 @@ func GenerateID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// NewStore creates and returns an empty job store.
+// NewStore returns an empty job store.
 func NewStore() *Store {
 	return &Store{
 		jobs: make(map[string]*Job),
@@ -54,7 +53,7 @@ func (s *Store) Set(id string, job *Job) {
 	s.mu.Unlock()
 }
 
-// Get retrieves a job by ID. Returns the job and true if found, nil and false otherwise.
+// Get retrieves job by ID.
 func (s *Store) Get(id string) (*Job, bool) {
 	s.mu.RLock()
 	j, ok := s.jobs[id]
@@ -69,15 +68,14 @@ func (s *Store) Delete(id string) {
 	s.mu.Unlock()
 }
 
-// ScheduleCleanup removes the job with the given ID after the specified TTL.
+// ScheduleCleanup deletes job after TTL.
 func (s *Store) ScheduleCleanup(id string, ttl time.Duration) {
 	time.AfterFunc(ttl, func() {
 		s.Delete(id)
 	})
 }
 
-// MarkAllRunningAsError transitions all jobs with status StatusRunning to StatusError
-// and sets their Stderr to the provided message.
+// MarkAllRunningAsError marks running jobs as error with msg.
 func (s *Store) MarkAllRunningAsError(msg string) {
 	s.mu.Lock()
 	for _, job := range s.jobs {

@@ -5,9 +5,7 @@ import (
 	"slices"
 )
 
-// resolveAllowed expands allowed names into concrete usernames,
-// resolving group names into their member users. Returns nil for
-// nil/empty input and for groups that resolve to zero users (treated as public).
+// resolveAllowed expands names to usernames (resolves groups); zero matches → nil (public).
 func resolveAllowed(names []string, users map[string]*UserConfig) []string {
 	result := make(map[string]struct{})
 	for _, name := range names {
@@ -30,8 +28,7 @@ func resolveAllowed(names []string, users map[string]*UserConfig) []string {
 	return slices.Sorted(maps.Keys(result))
 }
 
-// IsAccessible reports whether the given username can access the service.
-// A nil Allowed field means public access; otherwise the user must be in the pre-resolved list.
+// IsAccessible reports whether username can access; nil Allowed = public.
 func (s *FlatService) IsAccessible(username string) bool {
 	if s.Allowed == nil {
 		return true
@@ -39,8 +36,7 @@ func (s *FlatService) IsAccessible(username string) bool {
 	return username != "" && slices.Contains(s.Allowed, username)
 }
 
-// IsHidden reports whether the service must be omitted entirely for the given
-// username: it is restricted and the user cannot access it.
+// IsHidden reports restricted && !accessible.
 func (s *FlatService) IsHidden(username string) bool {
 	return s.Restricted && !s.IsAccessible(username)
 }

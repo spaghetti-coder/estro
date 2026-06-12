@@ -22,7 +22,7 @@ const (
 	loginRateLimitRate = 1.0 / 90.0 // ~1 request per 90s
 )
 
-// Handler holds shared dependencies for all HTTP route handlers.
+// Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
 	cfg          *config.Config
 	jobs         *job.Store
@@ -35,8 +35,7 @@ type Handler struct {
 	cmdCtx context.Context
 }
 
-// NewHandler creates a Handler from a config LoadResult. In degraded mode it
-// serves no services and exposes the issue list instead.
+// NewHandler creates a Handler from a LoadResult; degraded mode serves no services.
 func NewHandler(res *config.LoadResult, jobStore *job.Store, sessionStore sessions.Store, cmdCtx context.Context) *Handler {
 	h := &Handler{
 		cfg:          res.Config,
@@ -52,25 +51,23 @@ func NewHandler(res *config.LoadResult, jobStore *job.Store, sessionStore sessio
 	return h
 }
 
-// healthzResponse is the JSON body of the /healthz endpoint.
+// healthzResponse is the /healthz JSON body.
 type healthzResponse struct {
 	Status string   `json:"status"`
 	Issues []string `json:"issues,omitempty"`
 }
 
-// errJSON writes a JSON error response with the given status code and message.
+// errJSON writes a JSON error response.
 func errJSON(c *echo.Context, status int, msg string) error {
 	return c.JSON(status, map[string]string{"error": msg})
 }
 
-// tooManyLogins is the shared response for login rate-limit rejections.
+// tooManyLogins is the login rate-limit rejection response.
 func tooManyLogins(c *echo.Context) error {
 	return errJSON(c, http.StatusTooManyRequests, "Too many login attempts")
 }
 
-// degradedIndexMiddleware returns middleware that overrides the response status
-// from 200 to 503 for GET / when the handler is in degraded mode.
-// All other requests and status codes pass through unchanged.
+// degradedIndexMiddleware overrides 200 → 503 on GET / in degraded mode.
 func (h *Handler) degradedIndexMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -88,7 +85,7 @@ func (h *Handler) degradedIndexMiddleware() echo.MiddlewareFunc {
 	}
 }
 
-// RegisterRoutes registers all HTTP routes on the given Echo instance.
+// RegisterRoutes registers all HTTP routes.
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	e.Use(h.degradedIndexMiddleware())
 	loginLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
@@ -231,9 +228,6 @@ func (h *Handler) executeAsync(jobID string, svc config.FlatService, cmd string)
 	status := job.StatusDone
 	if cmdErr != nil {
 		status = job.StatusError
-		// Surface the command's own stderr when it produced any; otherwise fall
-		// back to the Go execution error (e.g. "exit status 1") so the failure
-		// is never reported with an empty message.
 		if stderr == "" {
 			stderr = cmdErr.Error()
 		}

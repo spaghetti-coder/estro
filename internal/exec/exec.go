@@ -12,18 +12,12 @@ import (
 	"github.com/spaghetti-coder/estro/internal/config"
 )
 
-// ShellEscape escapes embedded single quotes so cmd can be safely placed inside
-// a single-quoted shell string. The surrounding quotes are added by the caller
-// (see BuildCmd).
+// ShellEscape escapes single quotes for use in single-quoted shell strings.
 func ShellEscape(cmd string) string {
 	return strings.ReplaceAll(cmd, "'", "'\\''")
 }
 
-// BuildCmd constructs the final shell command string, wrapping it in nested
-// SSH sessions when a remote chain is specified. Each hop is a validated
-// "[user@]host[:port]" entry; a port is rendered as an "ssh -p <port>" option.
-// The sshOpts parameter is the space-separated SSH options string (e.g.
-// "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null").
+// BuildCmd constructs shell command, nesting SSH sessions for remote chains.
 func BuildCmd(command config.CommandValue, remote config.StringList, sshOpts string) (string, error) {
 	cmd := strings.Join(command, " && ")
 	if len(remote) == 0 {
@@ -46,8 +40,7 @@ func BuildCmd(command config.CommandValue, remote config.StringList, sshOpts str
 	return cmd, nil
 }
 
-// RunCommand executes a shell command via "sh -c" with an optional timeout,
-// returning trimmed stdout, stderr, and any execution error.
+// RunCommand executes cmd via 'sh -c' with optional timeout; returns trimmed output.
 func RunCommand(ctx context.Context, cmdStr string, timeout time.Duration) (string, string, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc

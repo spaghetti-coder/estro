@@ -15,9 +15,7 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// validateAllowedRef is the "allowed_ref" element validator: an `allowed`
-// entry must name an existing user or a group held by at least one user.
-// It reaches the root Config via FieldLevel.Top().
+// validateAllowedRef checks allowed entry names a known user or group; reaches Config via FieldLevel.Top().
 func validateAllowedRef(fl validator.FieldLevel) bool {
 	name := fl.Field().String()
 	top, ok := fl.Top().Interface().(Config)
@@ -37,13 +35,13 @@ func validateAllowedRef(fl validator.FieldLevel) bool {
 	return false
 }
 
-// Issue is one human-readable configuration problem.
+// Issue is a human-readable config problem.
 type Issue struct {
 	Path string // dotted path (e.g. "global.hostname"); "" for file-level problems
 	Msg  string // "required" | "invalid value" | "invalid field"
 }
 
-// String renders the issue, back-ticking the path when present.
+// String renders the issue; back-ticks path when present.
 func (i Issue) String() string {
 	if i.Path == "" {
 		return i.Msg
@@ -51,16 +49,16 @@ func (i Issue) String() string {
 	return fmt.Sprintf("`%s` %s", i.Path, i.Msg)
 }
 
-// LoadResult always yields a usable Config plus any issues found.
+// LoadResult carries a usable Config plus any issues.
 type LoadResult struct {
 	Config *Config
 	Issues []Issue
 }
 
-// Healthy reports whether the configuration loaded with no issues.
+// Healthy reports no issues.
 func (r *LoadResult) Healthy() bool { return len(r.Issues) == 0 }
 
-// IssueStrings returns the rendered issue strings (for JSON responses / UI).
+// IssueStrings returns rendered issue strings for JSON/UI.
 func (r *LoadResult) IssueStrings() []string {
 	out := make([]string, 0, len(r.Issues))
 	for _, is := range r.Issues {
@@ -85,10 +83,7 @@ var (
 	digitsRe     = regexp.MustCompile(`^\d+$`)
 )
 
-// embeddedSegRe builds the regex that strips anonymous-embedded struct type
-// names (e.g. CascadeFields, LayoutFields) from a validator namespace. The names
-// are derived by reflection over the Config schema, so renaming or adding an
-// embed can't silently break formatPath.
+// embeddedSegRe builds regex stripping inline-embed names from validator namespace; derived by reflection so renames can't silently break formatPath.
 func embeddedSegRe() *regexp.Regexp {
 	names := embeddedStructNames(reflect.TypeOf(Config{}), map[reflect.Type]bool{})
 	slices.Sort(names)
@@ -102,8 +97,7 @@ func embeddedSegRe() *regexp.Regexp {
 	return regexp.MustCompile(`\.(` + strings.Join(names, "|") + `)`)
 }
 
-// embeddedStructNames returns the type names of all anonymous embedded structs
-// reachable from t; validator/v10 includes these as extra namespace segments.
+// embeddedStructNames returns anonymous embed names reachable from t.
 func embeddedStructNames(t reflect.Type, seen map[reflect.Type]bool) []string {
 	t = derefAll(t)
 	if t.Kind() != reflect.Struct || seen[t] {
@@ -133,9 +127,7 @@ func derefAll(t reflect.Type) reflect.Type {
 	}
 }
 
-// formatPath turns a validator namespace into a display path: drop the root
-// type and inline-embed segments, and dot non-numeric map-key brackets (numeric
-// brackets stay as array indices).
+// formatPath cleans validator namespace: drops root/embed segments, dots map-key brackets; numeric brackets kept as indices.
 func formatPath(ns string) string {
 	ns = rootPrefixRe.ReplaceAllString(ns, "")
 	ns = inlineSegRe.ReplaceAllString(ns, "")
@@ -176,9 +168,7 @@ func validateStruct(cfg *Config) []Issue {
 	return issues
 }
 
-// collectIssues merges value-rule failures (validator/v10) and wrong-shape /
-// unknown-key findings from the structural walk over the resolved tree, then
-// dedupes to one issue per field path.
+// collectIssues merges value errors and shape/unknown-key issues; dedupes per path.
 func collectIssues(cfg *Config, raw map[string]any) []Issue {
 	var issues []Issue
 	issues = append(issues, validateStruct(cfg)...)
@@ -186,18 +176,14 @@ func collectIssues(cfg *Config, raw map[string]any) []Issue {
 	return dedupeSort(issues)
 }
 
-// shapeIssues reports "invalid value" for any present field whose value has the
-// wrong YAML shape, walking the resolved tree (anchors/merges expanded) against
-// the struct schema. Unknown and x-* keys are skipped.
+// shapeIssues reports "invalid value" for wrong-shape fields; walks resolved tree against struct schema, skips x-*/unknown.
 func shapeIssues(raw map[string]any) []Issue {
 	var issues []Issue
 	walkStructShape(reflect.TypeOf(Config{}), raw, "", &issues)
 	return issues
 }
 
-// walkStructShape checks every key in node against the struct schema defined by
-// type t. It skips x-* extension keys; for known keys it delegates to
-// checkFieldShape; for unknown keys it emits an "invalid field" issue.
+// walkStructShape checks node keys against schema; skips x-*, delegates known, flags unknown.
 func walkStructShape(t reflect.Type, node map[string]any, path string, issues *[]Issue) {
 	schema := schemaFields(t)
 	for key, val := range node {
@@ -213,9 +199,7 @@ func walkStructShape(t reflect.Type, node map[string]any, path string, issues *[
 	}
 }
 
-// checkFieldShape validates that val has the correct YAML shape for the given
-// field type ft. It appends an Issue with Msg "invalid value" on mismatch and
-// recurses into structs, slices of structs, and map values.
+// checkFieldShape validates YAML shape for ft; recurses into structs/slices/maps.
 func checkFieldShape(ft reflect.Type, val any, path string, issues *[]Issue) {
 	if val == nil {
 		return
@@ -293,9 +277,7 @@ func checkFieldShape(ft reflect.Type, val any, path string, issues *[]Issue) {
 	}
 }
 
-// schemaFields returns a map from YAML key name to StructField for the given
-// struct type. It flattens anonymous inline-embedded structs (e.g. CascadeFields,
-// LayoutFields) and skips the inline Extra catch-all map and yaml:"-" fields.
+// schemaFields maps YAML keys to StructField; flattens inline embeds, skips Extra/yaml:"-".
 func schemaFields(t reflect.Type) map[string]reflect.StructField {
 	result := make(map[string]reflect.StructField)
 	for i := range t.NumField() {
@@ -357,9 +339,7 @@ func joinPath(prefix, key string) string {
 	return prefix + "." + key
 }
 
-// msgRank orders issue messages so that, when several land on the same field,
-// the most root-cause one wins (a present-but-wrong value subsumes the
-// "required" it incidentally triggers when the bad value decodes to empty).
+// msgRank ranks issues per path: "invalid value" > "required" (bad value can trigger "required" when decoded empty) > "invalid field".
 func msgRank(msg string) int {
 	switch msg {
 	case "invalid value":
@@ -373,9 +353,7 @@ func msgRank(msg string) int {
 	}
 }
 
-// dedupeSort collapses issues to at most one per field path (keeping the
-// highest-ranked message) and returns them in a stable order. Path-less issues
-// are kept and de-duplicated by exact value.
+// dedupeSort keeps highest-ranked issue per path; dedupes pathless by exact value.
 func dedupeSort(in []Issue) []Issue {
 	byPath := make(map[string]Issue)
 	var pathless []Issue
@@ -407,9 +385,7 @@ func dedupeSort(in []Issue) []Issue {
 	return out
 }
 
-// ServerAddr returns the host:port to bind, falling back to defaults for an
-// invalid hostname or an out-of-range port (port 0 from a wrong-type value
-// would otherwise bind a random free port).
+// ServerAddr returns host:port; falls back to defaults on invalid values.
 func (r *LoadResult) ServerAddr() string {
 	g := r.Config.GetGlobal()
 	host := coalesce(g.Hostname, defaultHostname)

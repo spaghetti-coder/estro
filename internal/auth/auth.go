@@ -12,39 +12,38 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// SessionCookieName is the cookie name used for session storage.
 const SessionCookieName = "connect.sid"
 
 const rememberMeMaxAge = 30 * 24 * 3600
 
-// bcryptCost is the cost factor used by HashPassword.
 var bcryptCost = 13
 
-// SetBcryptCost overrides the bcrypt cost. Intended for tests only.
+// SetBcryptCost overrides bcrypt cost (tests only).
 func SetBcryptCost(c int) { bcryptCost = c }
 
-// Authenticate verifies a username/password combination against the
-// provided user map. Returns the user on success, nil on failure.
+// Authenticate checks username/password; returns user or nil.
 func Authenticate(users map[string]*config.UserConfig, username, password string) *config.UserConfig {
-	if user, ok := users[username]; ok {
-		stored := user.Password
-		if strings.HasPrefix(stored, "plain:") {
-			if stored[len("plain:"):] == password {
-				return user
-			}
-		} else {
-			hash := strings.TrimPrefix(stored, "bcrypt:")
-			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil {
-				return user
-			}
-		}
+	user, ok := users[username]
+	if !ok {
+		return nil
 	}
 
+	stored := user.Password
+	if strings.HasPrefix(stored, "plain:") {
+		if strings.TrimPrefix(stored, "plain:") == password {
+			return user
+		}
+		return nil
+	}
+
+	hash := strings.TrimPrefix(stored, "bcrypt:")
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil {
+		return user
+	}
 	return nil
 }
 
-// HashPassword generates a bcrypt hash from a plain-text password
-// and returns it with the "bcrypt:" prefix used by Authenticate.
+// HashPassword returns a bcrypt hash with "bcrypt:" prefix.
 func HashPassword(plainPassword string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcryptCost)
 	if err != nil {
@@ -53,33 +52,25 @@ func HashPassword(plainPassword string) (string, error) {
 	return "bcrypt:" + string(hash), nil
 }
 
-// GetSessionUser retrieves the authenticated username from the session cookie.
-// Returns an empty string if no user is logged in.
+// GetSessionUser returns the logged-in username, or "".
 func GetSessionUser(store sessions.Store, r *http.Request) string {
-	// Error ignored: Get() returns a valid session even on decode errors.
-	session, _ := store.Get(r, SessionCookieName)
-	username, ok := session.Values["user"].(string)
-	if !ok || username == "" {
-		return ""
-	}
+	session, _ := store.Get(r, SessionCookieName) // Get always returns a usable session.
+	username, _ := session.Values["user"].(string)
 	return username
 }
 
-// SetSessionUser stores the username in the session cookie.
-// When rememberMe is true, the session persists for 30 days.
+// SetSessionUser saves username to session; 30-day max-age when rememberMe.
 func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter, username string, rememberMe bool) error {
 	session, _ := store.Get(r, SessionCookieName)
 	session.Values["user"] = username
-	maxAge := 0
+	session.Options = getSessionOptions(0)
 	if rememberMe {
-		maxAge = rememberMeMaxAge
+		session.Options.MaxAge = rememberMeMaxAge
 	}
-	session.Options = getSessionOptions(maxAge)
 	return session.Save(r, w)
 }
 
-// GenerateSessionSecret creates a cryptographically random 32-byte secret
-// suitable for use as a session cookie signing key.
+// GenerateSessionSecret returns a random 32-byte signing key.
 func GenerateSessionSecret() ([]byte, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -88,16 +79,14 @@ func GenerateSessionSecret() ([]byte, error) {
 	return b, nil
 }
 
-// NewSessionStore creates a new cookie-based session store signed with
-// the provided secret.
+// NewSessionStore returns a cookie store signed with secret.
 func NewSessionStore(secret []byte) sessions.Store {
 	return sessions.NewCookieStore(secret)
 }
 
-// DestroySession clears the session cookie and expires it immediately.
+// DestroySession expires and clears the session.
 func DestroySession(store sessions.Store, r *http.Request, w http.ResponseWriter) error {
-	// Error ignored: Get() always returns a usable session.
-	session, _ := store.Get(r, SessionCookieName)
+	session, _ := store.Get(r, SessionCookieName) // Get always returns a usable session.
 	session.Options = getSessionOptions(-1)
 	session.Values = map[any]any{}
 	return session.Save(r, w)

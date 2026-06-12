@@ -10,15 +10,14 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// RemoteHost is a parsed "[user@]host[:port]" SSH target. Host is always the
-// bare address (IPv6 brackets stripped); User and Port may be empty.
+// RemoteHost is a parsed "[user@]host[:port]"; IPv6 brackets stripped from Host.
 type RemoteHost struct {
 	User string
 	Host string
 	Port string
 }
 
-// Target returns the SSH connection target, "[user@]host" (no brackets, no port).
+// Target returns "[user@]host" without brackets or port.
 func (r RemoteHost) Target() string {
 	if r.User != "" {
 		return r.User + "@" + r.Host
@@ -26,10 +25,7 @@ func (r RemoteHost) Target() string {
 	return r.Host
 }
 
-// SplitRemoteHost decomposes a single "[user@]host[:port]" entry. It performs
-// structural parsing only — it does not validate host/user/port content. IPv6
-// with a port requires bracket notation ("[::1]:22"); a bare IPv6 literal is
-// treated as host-only.
+// SplitRemoteHost parses "[user@]host[:port]"; structural only, no content validation.
 func SplitRemoteHost(s string) (RemoteHost, error) {
 	if s == "" {
 		return RemoteHost{}, fmt.Errorf("empty remote host")
@@ -75,21 +71,14 @@ func SplitRemoteHost(s string) (RemoteHost, error) {
 	return rh, nil
 }
 
-// unixUsernameRe matches a conservative Unix username: starts with a lower-case
-// letter or underscore, followed by lower-case letters, digits, underscores or
-// hyphens. The trailing '$' (Samba machine-account) form is deliberately not
-// allowed: the SSH target is built into a shell string run via "sh -c", where a
-// "$@" sequence (e.g. "user$@host") would undergo shell expansion and silently
-// connect to the wrong host.
+// unixUsernameRe matches Unix usernames; "$" disallowed — e.g. "user$@host" expands in shell, connects wrong host.
 var unixUsernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
 
 func isValidUnixUsername(s string) bool {
 	return len(s) <= 32 && unixUsernameRe.MatchString(s)
 }
 
-// validateRemoteHost is the "remote_host" validator: structural parse + segment
-// content checks. Host reuses the built-in "hostname_rfc1123|ip" rule; user and
-// port are checked explicitly (validator has no primitive for either).
+// validateRemoteHost is the "remote_host" validator: parse + content checks.
 func validateRemoteHost(fl validator.FieldLevel) bool {
 	rh, err := SplitRemoteHost(fl.Field().String())
 	if err != nil {
