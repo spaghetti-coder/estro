@@ -3,9 +3,12 @@ package auth
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/sessions"
 	"github.com/spaghetti-coder/estro/internal/config"
@@ -14,9 +17,10 @@ import (
 
 const SessionCookieName = "connect.sid"
 
-const rememberMeMaxAge = 30 * 24 * 3600
-
 var bcryptCost = 13
+
+// ErrSessionExpired is returned when a session's absolute expiry has passed.
+var ErrSessionExpired = errors.New("session expired")
 
 // SetBcryptCost overrides bcrypt cost (tests only).
 func SetBcryptCost(c int) { bcryptCost = c }
@@ -59,14 +63,54 @@ func GetSessionUser(store sessions.Store, r *http.Request) string {
 	return username
 }
 
-// SetSessionUser saves username to session; 30-day max-age when rememberMe.
-func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter, username string, rememberMe bool) error {
+// SetSessionUser saves username to session. Stores remember_me and expires_at for finite remember-me TTLs.
+func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter, username string, rememberMe bool, maxAge int) error {
 	session, _ := store.Get(r, SessionCookieName)
 	session.Values["user"] = username
 	session.Options = getSessionOptions(0)
 	if rememberMe {
-		session.Options.MaxAge = rememberMeMaxAge
+		session.Options.MaxAge = maxAge
+		session.Values["remember_me"] = true
+		if maxAge > 0 && maxAge != math.MaxInt32 {
+			session.Values["expires_at"] = time.Now().Add(time.Duration(maxAge) * time.Second).Unix()
+		} else {
+			delete(session.Values, "expires_at")
+		}
+	} else {
+		delete(session.Values, "remember_me")
+		delete(session.Values, "expires_at")
 	}
+	return session.Save(r, w)
+}
+
+// RefreshSession slides cookie for remember-me sessions. Caps MaxAge at remaining time
+// via expires_at. Returns ErrSessionExpired past deadline. No-op for session-only cookies.
+func RefreshSession(store sessions.Store, r *http.Request, w http.ResponseWriter, configuredTTL int) error {
+	session, _ := store.Get(r, SessionCookieName)
+	if _, ok := session.Values["user"].(string); !ok {
+		return nil // no session to refresh
+	}
+
+	rememberMe, _ := session.Values["remember_me"].(bool)
+	if !rememberMe {
+		return nil // session-only cookie, don't convert to persistent
+	}
+
+	// Check absolute expiry (source of truth)
+	if exp, ok := session.Values["expires_at"].(int64); ok {
+		if time.Now().Unix() > exp {
+			return ErrSessionExpired
+		}
+		remaining := int(time.Until(time.Unix(exp, 0)).Seconds())
+		if remaining <= 0 {
+			return ErrSessionExpired
+		}
+		session.Options = getSessionOptions(remaining)
+	} else {
+		// No absolute expiry (no-limit session)
+		session.Options = getSessionOptions(configuredTTL)
+	}
+
 	return session.Save(r, w)
 }
 

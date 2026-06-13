@@ -165,6 +165,33 @@ func loginAs(t *testing.T, e *echo.Echo, username, password string, rememberMe b
 	return cookie
 }
 
+// extractSessionCookie parses the Set-Cookie header directly; works around Go's
+// ReadSetCookies rejecting '|' in cookie values (gorilla securecookie uses '|' as separator).
+func extractSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
+	for _, v := range rec.Header().Values("Set-Cookie") {
+		if !strings.HasPrefix(v, "connect.sid=") {
+			continue
+		}
+		parts := strings.SplitN(v, "=", 2)
+		val := parts[1]
+		if idx := strings.Index(val, ";"); idx >= 0 {
+			val = val[:idx]
+		}
+		return &http.Cookie{Name: "connect.sid", Value: val}
+	}
+	return nil
+}
+
+// hasSessionCookie checks if the response has a Set-Cookie header for connect.sid.
+func hasSessionCookie(rec *httptest.ResponseRecorder) bool {
+	for _, v := range rec.Header().Values("Set-Cookie") {
+		if strings.HasPrefix(v, "connect.sid=") {
+			return true
+		}
+	}
+	return false
+}
+
 func findSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "connect.sid" {
@@ -703,5 +730,71 @@ func TestExecuteAsyncStderr(t *testing.T) {
 				t.Errorf("stderr = %q, want %q", j.Stderr, tt.wantStderr)
 			}
 		})
+	}
+}
+
+func TestSessionSlidingRefreshesCookie(t *testing.T) {
+	cfg := buildTestConfig()
+	cfg.Global.SessionTTL = ptrOf(0) // no limit → sliding enabled
+	e, _, _ := setupTestEnvWithConfig(t, cfg)
+
+	cookie := loginAs(t, e, "alice", "changeme1", true)
+
+	rec := doRequest(e, http.MethodGet, "/me", cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !hasSessionCookie(rec) {
+		t.Fatal("expected refreshed session cookie from sliding middleware")
+	}
+
+	// extract refreshed cookie from header (Go's ReadSetCookies rejects '|' in values)
+	freshCookie := extractSessionCookie(rec)
+	rec2 := doRequest(e, http.MethodGet, "/me", freshCookie)
+	var result map[string]any
+	decodeJSON(t, rec2.Body.Bytes(), &result)
+	if result["username"] != "alice" {
+		t.Errorf("expected alice after sliding refresh, got %v", result["username"])
+	}
+}
+
+func TestSessionSlidingEnabledWithTTL(t *testing.T) {
+	cfg := buildTestConfig()
+	cfg.Global.SessionTTL = ptrOf(720) // explicit TTL → sliding enabled for remember-me
+	e, _, _ := setupTestEnvWithConfig(t, cfg)
+
+	cookie := loginAs(t, e, "alice", "changeme1", true)
+
+	rec := doRequest(e, http.MethodGet, "/me", cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !hasSessionCookie(rec) {
+		t.Error("expected cookie refresh for remember-me session with explicit TTL")
+	}
+
+	// Sliding should preserve the session
+	freshCookie := extractSessionCookie(rec)
+	rec2 := doRequest(e, http.MethodGet, "/me", freshCookie)
+	var result map[string]any
+	decodeJSON(t, rec2.Body.Bytes(), &result)
+	if result["username"] != "alice" {
+		t.Errorf("expected alice after sliding refresh, got %v", result["username"])
+	}
+}
+
+func TestSessionSlidingNoOpForSessionOnly(t *testing.T) {
+	cfg := buildTestConfig()
+	e, _, _ := setupTestEnvWithConfig(t, cfg)
+
+	// Login without rememberMe → session-only cookie
+	cookie := loginAs(t, e, "alice", "changeme1", false)
+
+	rec := doRequest(e, http.MethodGet, "/me", cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if hasSessionCookie(rec) {
+		t.Error("session-only cookie should not be refreshed to persistent by sliding middleware")
 	}
 }

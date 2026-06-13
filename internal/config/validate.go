@@ -274,6 +274,11 @@ func checkFieldShape(ft reflect.Type, val any, path string, issues *[]Issue) {
 		}
 		if _, isSeq := asSeq(val); isSeq {
 			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
+			return
+		}
+		// String value for non-string field; YAML decoders silently convert to zero values.
+		if _, isStr := val.(string); isStr && ft.Kind() != reflect.String {
+			*issues = append(*issues, Issue{Path: path, Msg: "invalid value"})
 		}
 	}
 }

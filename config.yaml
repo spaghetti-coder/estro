@@ -39,6 +39,7 @@ global:
   subtitle: Config test suite
   <<: *bind-address
   secret:               # session secret (random per restart if omitted)
+  session_ttl: 24       # session TTL in hours; 0 = no expiration (default: 0)
   # ~~~ Cascading (most specific wins): global → section ~~~
   collapsable: true     # sections can be collapsed (default: true)
   columns: 3            # buttons per row on desktop ≥1024px (default: 3)

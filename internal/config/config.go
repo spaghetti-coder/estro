@@ -4,6 +4,7 @@ package config
 import (
 	"bytes"
 	"maps"
+	"math"
 	"os"
 	"reflect"
 	"regexp"
@@ -39,6 +40,7 @@ type GlobalConfig struct {
 	Hostname      *string `yaml:"hostname" validate:"omitempty,hostname_rfc1123|ip"`
 	Port          *int    `yaml:"port" validate:"omitempty,gte=1,lte=65535"`
 	Secret        *string `yaml:"secret"`
+	SessionTTL    *int    `yaml:"session_ttl" validate:"omitempty,gte=0"`
 	CascadeFields `yaml:",inline"`
 	LayoutFields  `yaml:",inline"`
 }
@@ -157,6 +159,15 @@ func (c *Config) GetGlobal() *GlobalConfig {
 		return c.Global
 	}
 	return &GlobalConfig{}
+}
+
+// SessionTTLSeconds returns remember-me max-age in seconds; 0/nil → no limit (MaxInt32), N>0 → N hours.
+func (c *Config) SessionTTLSeconds() int {
+	g := c.GetGlobal()
+	if g.SessionTTL != nil && *g.SessionTTL > 0 {
+		return *g.SessionTTL * 3600
+	}
+	return math.MaxInt32
 }
 
 // GetConfigResponse returns title, subtitle, sorted usernames for frontend.

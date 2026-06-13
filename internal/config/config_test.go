@@ -1,7 +1,10 @@
 package config
 
 import (
+	"math"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -36,10 +39,52 @@ func loadIssueStrings(t *testing.T, src string) []string {
 	return Load(path).IssueStrings()
 }
 
+// mustLoadYAML writes the YAML content, loads it, and fails the test if unhealthy.
+func mustLoadYAML(t *testing.T, yaml string) *LoadResult {
+	t.Helper()
+	path := writeTestConfig(t, yaml)
+	res := Load(path)
+	if !res.Healthy() {
+		t.Fatalf("unexpected issues: %v", res.IssueStrings())
+	}
+	return res
+}
+
 func TestLoadInvalidConfig(t *testing.T) {
 	issues := loadIssues(t, "sections:\n  - title: ''\n    services:\n      - title: test\n        command: echo\n")
 	if len(issues) == 0 {
 		t.Fatal("expected issues for empty required field")
+	}
+}
+
+func TestLoadSessionTTL(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{"omitted no limit", "global:\n  title: E\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", math.MaxInt32},
+		{"zero no limit", "global:\n  session_ttl: 0\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", math.MaxInt32},
+		{"720 hours", "global:\n  session_ttl: 720\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", 720 * 3600},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Load(writeTestConfig(t, tt.src))
+			if !res.Healthy() {
+				t.Fatalf("unexpected issues: %v", res.IssueStrings())
+			}
+			if got := res.Config.SessionTTLSeconds(); got != tt.want {
+				t.Errorf("SessionTTLSeconds() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadInvalidSessionTTL(t *testing.T) {
+	strs := loadIssueStrings(t, "global:\n  session_ttl: -5\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n")
+	joined := strings.Join(strs, "\n")
+	if !strings.Contains(joined, "session_ttl") {
+		t.Errorf("expected session_ttl issue, got: %v", strs)
 	}
 }
 
@@ -54,5 +99,143 @@ func TestLoadBadYAML(t *testing.T) {
 	issues := loadIssues(t, "sections: [{invalid yaml\n")
 	if len(issues) == 0 {
 		t.Fatal("expected degraded for bad YAML")
+	}
+}
+
+func TestSessionTTLSeconds(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *Config
+		want int
+	}{
+		{"nil global → no limit", &Config{}, math.MaxInt32},
+		{"nil SessionTTL → no limit", &Config{Global: &GlobalConfig{}}, math.MaxInt32},
+		{"zero → no limit", &Config{Global: &GlobalConfig{SessionTTL: ptrOf(0)}}, math.MaxInt32},
+		{"1 hour", &Config{Global: &GlobalConfig{SessionTTL: ptrOf(1)}}, 3600},
+		{"720 hours (30 days)", &Config{Global: &GlobalConfig{SessionTTL: ptrOf(720)}}, 720 * 3600},
+		{"8760 hours (1 year)", &Config{Global: &GlobalConfig{SessionTTL: ptrOf(8760)}}, 8760 * 3600},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.SessionTTLSeconds(); got != tt.want {
+				t.Errorf("SessionTTLSeconds() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadPopulatesValidFieldsDespiteTypeError(t *testing.T) {
+	src := "global:\n  title: MyApp\n  port: {a: b}\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
+	res := Load(writeTestConfig(t, src))
+	g := res.Config.Global
+	if g == nil || g.Title == nil || *g.Title != "MyApp" {
+		t.Fatalf("expected global.title=MyApp, got %+v", g)
+	}
+}
+
+func TestExpandEstroEnv(t *testing.T) {
+	t.Setenv("ESTRO_TEST_HOST", "0.0.0.0")
+	t.Setenv("ESTRO_TEST_SECRET", "s3cr3t")
+	src := "global:\n" +
+		"  hostname: \"{estro_env.ESTRO_TEST_HOST}\"\n" +
+		"  secret: \"{estro_env.ESTRO_TEST_SECRET}\"\n" +
+		"sections:\n  - title: S\n    services:\n      - title: T\n        command: echo {estro_env.ESTRO_TEST_HOST} ${RUNTIME}\n"
+	res := Load(writeTestConfig(t, src))
+	if !res.Healthy() {
+		t.Fatalf("expected healthy, got %v", res.IssueStrings())
+	}
+	g := res.Config.Global
+	if g.Hostname == nil || *g.Hostname != "0.0.0.0" {
+		t.Errorf("hostname = %v, want 0.0.0.0", g.Hostname)
+	}
+	if g.Secret == nil || *g.Secret != "s3cr3t" {
+		t.Errorf("secret = %v, want s3cr3t", g.Secret)
+	}
+	cmd := res.Config.Sections[0].Services[0].Command
+	if len(cmd) != 1 || cmd[0] != "echo 0.0.0.0 ${RUNTIME}" {
+		t.Errorf("command = %v, want [echo 0.0.0.0 ${RUNTIME}]", cmd)
+	}
+}
+
+func TestExpandEstroEnvUnsetIsIssue(t *testing.T) {
+	_ = os.Unsetenv("ESTRO_UNSET_VAR_XYZ")
+	src := "global:\n  secret: \"{estro_env.ESTRO_UNSET_VAR_XYZ}\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo hi\n"
+	strs := loadIssueStrings(t, src)
+	if !strings.Contains(strings.Join(strs, "\n"), "ESTRO_UNSET_VAR_XYZ is not set") {
+		t.Errorf("expected unset-env issue, got %v", strs)
+	}
+}
+
+func TestLoadAcceptsXStarEverywhere(t *testing.T) {
+	src := `
+x-top: &a
+  timeout: 5
+global:
+  <<: *a
+  x-note: anything
+sections:
+  - title: S
+    x-section-note: ok
+    services:
+      - title: T
+        command: echo
+        x-svc-note: ok
+`
+	res := Load(writeTestConfig(t, src))
+	if !res.Healthy() {
+		t.Fatalf("expected healthy, got: %v", res.IssueStrings())
+	}
+}
+
+func TestLoadEmptyFile(t *testing.T) {
+	strs := loadIssueStrings(t, "   \n")
+	if len(strs) != 1 || strs[0] != "`sections` required" {
+		t.Errorf("expected [`sections` required], got %v", strs)
+	}
+}
+
+func TestRemoteSSHOptsFromYAML(t *testing.T) {
+	// This test specifically tests YAML parsing of remote_ssh_opts, so keep raw YAML.
+	yaml := `---
+global:
+  title: Estro
+  subtitle: SSH opts test
+  hostname: 0.0.0.0
+  port: 3000
+  remote_ssh_opts:
+    - -o StrictHostKeyChecking=no
+    - -o UserKnownHostsFile=/dev/null
+users:
+  admin:
+    password: '$2y$10$hash'
+sections:
+  - title: Section with ssh opts
+    remote_ssh_opts:
+      - -o ConnectTimeout=5
+    services:
+      - title: Inherits section opts
+        command: uptime
+      - title: Overrides with own opts
+        command: date
+        remote_ssh_opts: ['-o', 'CustomOpt=yes']
+  - title: Inherits global opts
+    services:
+      - title: Global opts
+        command: uptime
+`
+	res := mustLoadYAML(t, yaml)
+	services := res.Config.Flatten()
+
+	want := map[string]StringList{
+		"Inherits section opts":   {"-o ConnectTimeout=5"},
+		"Overrides with own opts": {"-o", "CustomOpt=yes"},
+		"Global opts":             {"-o StrictHostKeyChecking=no", "-o UserKnownHostsFile=/dev/null"},
+	}
+	for _, svc := range services {
+		if exp, ok := want[svc.Title]; ok {
+			if !slices.Equal(svc.RemoteSSHOpts, exp) {
+				t.Errorf("%s: expected %v, got %v", svc.Title, exp, svc.RemoteSSHOpts)
+			}
+		}
 	}
 }

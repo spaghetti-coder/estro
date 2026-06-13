@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -151,48 +150,6 @@ func TestWrongTypeMergesToOneIssue(t *testing.T) {
 	}
 }
 
-func TestLoadPopulatesValidFieldsDespiteTypeError(t *testing.T) {
-	src := "global:\n  title: MyApp\n  port: {a: b}\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	res := Load(writeTestConfig(t, src))
-	g := res.Config.Global
-	if g == nil || g.Title == nil || *g.Title != "MyApp" {
-		t.Fatalf("expected global.title=MyApp, got %+v", g)
-	}
-}
-
-func TestExpandEstroEnv(t *testing.T) {
-	t.Setenv("ESTRO_TEST_HOST", "0.0.0.0")
-	t.Setenv("ESTRO_TEST_SECRET", "s3cr3t")
-	src := "global:\n" +
-		"  hostname: \"{estro_env.ESTRO_TEST_HOST}\"\n" +
-		"  secret: \"{estro_env.ESTRO_TEST_SECRET}\"\n" +
-		"sections:\n  - title: S\n    services:\n      - title: T\n        command: echo {estro_env.ESTRO_TEST_HOST} ${RUNTIME}\n"
-	res := Load(writeTestConfig(t, src))
-	if !res.Healthy() {
-		t.Fatalf("expected healthy, got %v", res.IssueStrings())
-	}
-	g := res.Config.Global
-	if g.Hostname == nil || *g.Hostname != "0.0.0.0" {
-		t.Errorf("hostname = %v, want 0.0.0.0", g.Hostname)
-	}
-	if g.Secret == nil || *g.Secret != "s3cr3t" {
-		t.Errorf("secret = %v, want s3cr3t", g.Secret)
-	}
-	cmd := res.Config.Sections[0].Services[0].Command
-	if len(cmd) != 1 || cmd[0] != "echo 0.0.0.0 ${RUNTIME}" {
-		t.Errorf("command = %v, want [echo 0.0.0.0 ${RUNTIME}]", cmd)
-	}
-}
-
-func TestExpandEstroEnvUnsetIsIssue(t *testing.T) {
-	_ = os.Unsetenv("ESTRO_UNSET_VAR_XYZ")
-	src := "global:\n  secret: \"{estro_env.ESTRO_UNSET_VAR_XYZ}\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo hi\n"
-	strs := loadIssueStrings(t, src)
-	if !strings.Contains(strings.Join(strs, "\n"), "ESTRO_UNSET_VAR_XYZ is not set") {
-		t.Errorf("expected unset-env issue, got %v", strs)
-	}
-}
-
 func TestUnknownKeyBehavior(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -283,6 +240,11 @@ func TestValueConstraints(t *testing.T) {
 			c.Users = map[string]*UserConfig{"alice": {Password: ""}}
 			return c
 		}()},
+		{"session_ttl negative", func() Config {
+			c := minimalValid()
+			c.Global = &GlobalConfig{SessionTTL: ptrOf(-1)}
+			return c
+		}()},
 	}
 
 	for _, tt := range rejected {
@@ -328,44 +290,6 @@ sections:
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing issue %q in:\n%s", want, joined)
 		}
-	}
-}
-
-func TestLoadUnreadableFile(t *testing.T) {
-	res := Load("/nonexistent/path/config.yaml")
-	if res.Healthy() {
-		t.Fatal("expected degraded result")
-	}
-	if res.IssueStrings()[0] != "Configuration file can't be read" {
-		t.Errorf("got %q", res.IssueStrings()[0])
-	}
-}
-
-func TestLoadAcceptsXStarEverywhere(t *testing.T) {
-	src := `
-x-top: &a
-  timeout: 5
-global:
-  <<: *a
-  x-note: anything
-sections:
-  - title: S
-    x-section-note: ok
-    services:
-      - title: T
-        command: echo
-        x-svc-note: ok
-`
-	res := Load(writeTestConfig(t, src))
-	if !res.Healthy() {
-		t.Fatalf("expected healthy, got: %v", res.IssueStrings())
-	}
-}
-
-func TestLoadEmptyFile(t *testing.T) {
-	strs := loadIssueStrings(t, "   \n")
-	if len(strs) != 1 || strs[0] != "`sections` required" {
-		t.Errorf("expected [`sections` required], got %v", strs)
 	}
 }
 
@@ -427,7 +351,7 @@ func TestLoadTypeMismatchPortFallsBackTo3000(t *testing.T) {
 func TestLoadWrongShapeTopLevel(t *testing.T) {
 	strs := loadIssueStrings(t, "sections: 123\n")
 	if len(strs) != 1 || strs[0] != "`sections` invalid value" {
-		t.Errorf("got %v, want [`sections` invalid value]", strs)
+		t.Errorf("got %v, want [`sections` invalid value`]", strs)
 	}
 }
 
@@ -506,10 +430,10 @@ func TestShapeIssues(t *testing.T) {
 		{"sections wrong shape (scalar)", "sections: 123\n", []string{"`sections` invalid value"}},
 		{"subtitle map", "global:\n  subtitle: {a: b}\n", []string{"`global.subtitle` invalid value"}},
 		{"hostname list", "global:\n  hostname: [foobar]\n", []string{"`global.hostname` invalid value"}},
-		{"port scalar string is shape-OK", "global:\n  port: notanint\n", nil},
+		{"port scalar string flagged", "global:\n  port: notanint\n", []string{"`global.port` invalid value"}},
 		{"groups map", "users:\n  bob:\n    groups: {a: b}\n", []string{"`users.bob.groups` invalid value"}},
 		{"inline flow wrong title", "sections: [{title: [a], services: [{title: T, command: echo}]}]\n", []string{"`sections[0].title` invalid value"}},
-		{"x-* anchor merged, shape ok", "x-foo: &foo\n  timeout: fff\nglobal:\n  <<: *foo\n", nil},
+		{"x-* anchor merged, shape flags type mismatch", "x-foo: &foo\n  timeout: fff\nglobal:\n  <<: *foo\n", []string{"`global.timeout` invalid value"}},
 		{"allowed map", "global:\n  allowed: {alice: y}\n", []string{"`global.allowed` invalid value"}},
 		{"allowed empty list ok", "global:\n  allowed: []\n", nil},
 		{"remote list ok", "global:\n  remote: [h1]\n", nil},

@@ -3,6 +3,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -85,9 +86,28 @@ func (h *Handler) degradedIndexMiddleware() echo.MiddlewareFunc {
 	}
 }
 
+// sessionSlidingMiddleware slides remember-me cookies. Expired sessions get 401.
+func (h *Handler) sessionSlidingMiddleware() echo.MiddlewareFunc {
+	ttl := h.cfg.SessionTTLSeconds()
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if auth.GetSessionUser(h.sessionStore, c.Request()) != "" {
+				if err := auth.RefreshSession(h.sessionStore, c.Request(), c.Response(), ttl); err != nil {
+					if errors.Is(err, auth.ErrSessionExpired) {
+						_ = auth.DestroySession(h.sessionStore, c.Request(), c.Response())
+						return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Session expired"})
+					}
+				}
+			}
+			return next(c)
+		}
+	}
+}
+
 // RegisterRoutes registers all HTTP routes.
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	e.Use(h.degradedIndexMiddleware())
+	e.Use(h.sessionSlidingMiddleware())
 	loginLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Skipper: middleware.DefaultSkipper,
 		Store: middleware.NewRateLimiterMemoryStoreWithConfig(
@@ -169,7 +189,7 @@ func (h *Handler) login(c *echo.Context) error {
 	if auth.Authenticate(h.cfg.Users, body.Username, body.Password) == nil {
 		return errJSON(c, http.StatusUnauthorized, "Invalid username or password")
 	}
-	if err := auth.SetSessionUser(h.sessionStore, c.Request(), c.Response(), body.Username, body.RememberMe); err != nil {
+	if err := auth.SetSessionUser(h.sessionStore, c.Request(), c.Response(), body.Username, body.RememberMe, h.cfg.SessionTTLSeconds()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to save session")
 	}
 	return c.JSON(http.StatusOK, map[string]string{"username": body.Username})
