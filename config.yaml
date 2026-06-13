@@ -9,8 +9,8 @@
 #   For config load variables expansion use "{estro_env.VARNAME}" syntax. Example:
 #   ```yaml
 #   global:
-#     secret: "{estro_env.SESSION_SECRET}"  # <- Must be quoted to avoid yaml expansion to map
-#     # secret: "{estro_env.NOVAR}"         # <- Config error if NOVAR is undefined
+#     session_secret: "{estro_env.SESSION_SECRET}"  # <- Must be quoted to avoid yaml expansion to map
+#     # session_secret: "{estro_env.NOVAR}"         # <- Config error if NOVAR is undefined
 #   # ...
 #   sections:
 #     - title: Foo
@@ -38,7 +38,8 @@ global:
   title: Estro
   subtitle: Config test suite
   <<: *bind-address
-  secret:               # session secret (random per restart if omitted)
+  # ~~~ Session ~~~
+  session_secret:       # session secret (random per restart if omitted)
   session_ttl: 24       # session TTL in hours; 0 = no expiration (default: 0)
   # ~~~ Cascading (most specific wins): global → section ~~~
   collapsable: true     # sections can be collapsed (default: true)

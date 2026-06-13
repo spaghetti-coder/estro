@@ -78,11 +78,11 @@ In fairness, it's just a tiny pet project for the home lab — ~0 stability and 
 
 ### Persistent session secret
 
-If no `secret` is set in `config.yaml`, a random secret is generated on every restart, invalidating all existing sessions. Set a stable secret for persistent logins:
+If no `session_secret` is set in `config.yaml`, a random secret is generated on every restart, invalidating all existing sessions. Set a stable secret for persistent logins:
 
 ```yaml
 global:
-  secret: your-random-secret-here
+  session_secret: your-random-secret-here
 ```
 
 ## Development

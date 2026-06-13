@@ -39,7 +39,7 @@ type GlobalConfig struct {
 	Subtitle      *string `yaml:"subtitle"`
 	Hostname      *string `yaml:"hostname" validate:"omitempty,hostname_rfc1123|ip"`
 	Port          *int    `yaml:"port" validate:"omitempty,gte=1,lte=65535"`
-	Secret        *string `yaml:"secret"`
+	SessionSecret *string `yaml:"session_secret"`
 	SessionTTL    *int    `yaml:"session_ttl" validate:"omitempty,gte=0"`
 	CascadeFields `yaml:",inline"`
 	LayoutFields  `yaml:",inline"`

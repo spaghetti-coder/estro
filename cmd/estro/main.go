@@ -57,8 +57,8 @@ func main() {
 		os.Exit(1)
 	}
 	globalCfg := cfg.GetGlobal()
-	if globalCfg.Secret != nil {
-		sessionSecret = []byte(*globalCfg.Secret)
+	if globalCfg.SessionSecret != nil {
+		sessionSecret = []byte(*globalCfg.SessionSecret)
 	}
 	sessionStore := auth.NewSessionStore(sessionSecret)
 

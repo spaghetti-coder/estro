@@ -138,7 +138,7 @@ func TestExpandEstroEnv(t *testing.T) {
 	t.Setenv("ESTRO_TEST_SECRET", "s3cr3t")
 	src := "global:\n" +
 		"  hostname: \"{estro_env.ESTRO_TEST_HOST}\"\n" +
-		"  secret: \"{estro_env.ESTRO_TEST_SECRET}\"\n" +
+		"  session_secret: \"{estro_env.ESTRO_TEST_SECRET}\"\n" +
 		"sections:\n  - title: S\n    services:\n      - title: T\n        command: echo {estro_env.ESTRO_TEST_HOST} ${RUNTIME}\n"
 	res := Load(writeTestConfig(t, src))
 	if !res.Healthy() {
@@ -148,8 +148,8 @@ func TestExpandEstroEnv(t *testing.T) {
 	if g.Hostname == nil || *g.Hostname != "0.0.0.0" {
 		t.Errorf("hostname = %v, want 0.0.0.0", g.Hostname)
 	}
-	if g.Secret == nil || *g.Secret != "s3cr3t" {
-		t.Errorf("secret = %v, want s3cr3t", g.Secret)
+	if g.SessionSecret == nil || *g.SessionSecret != "s3cr3t" {
+		t.Errorf("session_secret = %v, want s3cr3t", g.SessionSecret)
 	}
 	cmd := res.Config.Sections[0].Services[0].Command
 	if len(cmd) != 1 || cmd[0] != "echo 0.0.0.0 ${RUNTIME}" {
