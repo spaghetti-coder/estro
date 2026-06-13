@@ -9,7 +9,7 @@
   const RIPPLE_DURATION_MS = 600;
   const TOAST_ICONS = { success: '✓', error: '✕', info: 'ℹ' };
   const TOAST_MAX_CHARS = 120;
-  const pending = new Map();
+  const pending = new Set();
 
   function makeEl(tag, props) {
     return Object.assign(document.createElement(tag), props);
@@ -308,7 +308,7 @@
       if (!ok) { showToast(formatLabelHTML(section, title, 'Cancelled', 'muted'), 'info', { html: true }); return; }
     }
 
-    pending.set(svc, true);
+    pending.add(svc);
     setButtonPending(btn, true);
     try {
       const { jobId } = await runService(svc, timeout);
@@ -337,34 +337,26 @@
   function renderSection(title, buttons, collapsable, columns) {
     const storedExpanded = localStorage.getItem(STORAGE.section(title));
     const expanded = !collapsable || storedExpanded === 'true';
-    const wrapper = document.createElement('div');
-    wrapper.className = 'section-group';
+    const wrapper = makeEl('div', { className: 'section-group' });
 
-    const header = document.createElement('button');
-    header.type = 'button';
-    header.className = 'section-header';
+    const header = makeEl('button', { type: 'button', className: 'section-header' });
     header.setAttribute('aria-expanded', String(expanded));
 
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'section-title';
-    titleSpan.textContent = title;
+    const titleSpan = makeEl('span', { className: 'section-title', textContent: title });
 
     if (!collapsable) {
       header.classList.add('section-header--pinned');
       header.appendChild(titleSpan);
     } else {
-      const chevron = document.createElement('span');
-      chevron.className = 'section-chevron';
+      const chevron = makeEl('span', { className: 'section-chevron', textContent: '▶' });
       chevron.setAttribute('aria-hidden', 'true');
-      chevron.textContent = '▶';
       header.append(chevron, titleSpan);
       header.addEventListener('click', () => {
         toggleSection(header, sectionBody, title, header.getAttribute('aria-expanded') !== 'true');
       });
     }
 
-    const sectionBody = document.createElement('div');
-    sectionBody.className = 'section-body';
+    const sectionBody = makeEl('div', { className: 'section-body' });
     if (!expanded) sectionBody.classList.add('section-body--collapsed');
     sectionBody.style.setProperty('--cols', getSectionCols(columns));
 
@@ -413,9 +405,6 @@
       applyButtonAccessState(btn, svc);
     }
 
-    btn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
-    });
     return btn;
   }
 
@@ -446,9 +435,10 @@
     return { sectionOrder, sectionMap, sectionsAllDisabled };
   }
 
+  function clearButtons() { buttonsEl.innerHTML = ''; renderedSections = []; }
+
   function renderIssues(issues) {
-    buttonsEl.innerHTML = '';
-    renderedSections = [];
+    clearButtons();
     const tpl = document.getElementById('tpl-issues').content.cloneNode(true);
     const list = tpl.querySelector('.config-issues-list');
     for (const issue of issues) {
@@ -466,8 +456,7 @@
       if (!res.ok) throw new Error('Failed to load services');
       const services = await res.json();
       const showDisabled = localStorage.getItem(STORAGE.showDisabled) === 'true';
-      buttonsEl.innerHTML = '';
-      renderedSections = [];
+      clearButtons();
       const { sectionOrder, sectionMap, sectionsAllDisabled } = groupServicesBySection(services, showDisabled);
       for (const key of sectionOrder) {
         if (! key) {
@@ -599,8 +588,6 @@
 
   // --- Logs modal ---
 
-  const DEFAULT_AUTO_DISMISS_SEC = 3;
-
   function activateLogsTab(name) {
     logsTabBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
     logsStdoutEl.hidden = name !== 'stdout';
@@ -610,14 +597,11 @@
   async function copyLogs() {
     const activeTab = logsModalEl.querySelector('.logs-tab.active').dataset.tab;
     const content = activeTab === 'stdout' ? logsStdoutEl.textContent : logsStderrEl.textContent;
-    const successToast = ['Copied!', 'success', { autoDismiss: DEFAULT_AUTO_DISMISS_SEC }];
-    const failedToast = ['Failed to copy', 'error'];
-    
     // Try modern Clipboard API first
     if (navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(content);
-        showToast(...successToast);
+        showToast('Copied!', 'success', { autoDismiss: 3 });
         return;
       } catch (err) {
         console.error('Clipboard API failed:', err);
@@ -636,13 +620,13 @@
       document.body.removeChild(textarea);
       
       if (success) {
-        showToast(...successToast);
+        showToast('Copied!', 'success', { autoDismiss: 3 });
         return;
       }
-      showToast(...failedToast);
+      showToast('Failed to copy', 'error');
     } catch (err) {
       console.error('execCommand failed:', err);
-      showToast(...failedToast);
+      showToast('Failed to copy', 'error');
     }
   }
 
