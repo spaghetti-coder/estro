@@ -479,16 +479,21 @@
 
   // --- Collapse / Expand all FABs ---
 
-  const SVG_COLLAPSE = '<svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,3 8,8 13,3"/><line x1="3" y1="10" x2="13" y2="10" stroke-dasharray="2,2"/><polyline points="3,17 8,12 13,17"/></svg>';
-  const SVG_EXPAND   = '<svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 8,3 13,8"/><line x1="3" y1="10" x2="13" y2="10" stroke-dasharray="2,2"/><polyline points="3,12 8,17 13,12"/></svg>';
   const DRAG_THRESHOLD = 5;
 
-  function initFab() {
+  async function initFab() {
+    const [expandSvg, collapseSvg] = await Promise.all([
+      // '<svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,3 8,8 13,3"/><line x1="3" y1="10" x2="13" y2="10" stroke-dasharray="2,2"/><polyline points="3,17 8,12 13,17"/></svg>',
+      // '<svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 8,3 13,8"/><line x1="3" y1="10" x2="13" y2="10" stroke-dasharray="2,2"/><polyline points="3,12 8,17 13,12"/></svg>',
+      fetch('/assets/expand.svg').then(r => r.ok ? r.text() : ''),
+      fetch('/assets/collapse.svg').then(r => r.ok ? r.text() : ''),
+    ]);
+
     const fab = document.createElement('div');
     fab.className = 'fab-group';
 
-    const collapseBtn = makeEl('button', { className: 'fab-btn', type: 'button', title: 'Collapse all', innerHTML: SVG_COLLAPSE });
-    const expandBtn   = makeEl('button', { className: 'fab-btn', type: 'button', title: 'Expand all',   innerHTML: SVG_EXPAND });
+    const collapseBtn = makeEl('button', { className: 'fab-btn', type: 'button', title: 'Collapse all', innerHTML: collapseSvg });
+    const expandBtn   = makeEl('button', { className: 'fab-btn', type: 'button', title: 'Expand all',   innerHTML: expandSvg });
     fab.append(expandBtn, collapseBtn);
     document.body.appendChild(fab);
 
@@ -659,7 +664,7 @@
 
   // --- Init ---
 
-  function init() {
+  async function init() {
     checkbox = document.getElementById('themeToggle');
     knob     = document.querySelector('.theme-toggle .knob');
     toastsEl = document.getElementById('toasts');
@@ -741,7 +746,7 @@
       });
     }, { passive: true });
 
-    initFab();
+    await initFab();
 
     Promise.all([
       fetch('/config').then(r => r.json()),

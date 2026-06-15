@@ -463,6 +463,7 @@ select.form-input option{ background:var(--card); }
   transition:background var(--transition), color var(--transition);
 }
 .fab-btn + .fab-btn{ margin-top:4px; }
+.fab-btn svg{ width:20px; height:20px; display:block; }
 .fab-btn:focus-visible{ box-shadow:0 0 0 2px rgba(77,163,255,0.3); }
 .fab-btn:active{ background:rgba(77,163,255,0.08); }
 @media (hover:hover){
