@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	auth.SetBcryptCost(bcrypt.MinCost)
+	os.Exit(m.Run())
 }
 
 func setupStaticTestServer(t *testing.T) *echo.Echo {

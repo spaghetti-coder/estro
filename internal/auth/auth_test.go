@@ -4,6 +4,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,8 +15,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	SetBcryptCost(bcrypt.MinCost)
+	os.Exit(m.Run())
 }
 
 // setSession creates a request carrying a session cookie for username.
@@ -127,54 +129,14 @@ func TestAuthenticatePasswordFormats(t *testing.T) {
 		plain  string
 		want   bool
 	}{
-		{
-			name:   "bare bcrypt hash correct password",
-			stored: string(bcryptHash),
-			plain:  "secretpass",
-			want:   true,
-		},
-		{
-			name:   "bare bcrypt hash wrong password",
-			stored: string(bcryptHash),
-			plain:  "wrongpass",
-			want:   false,
-		},
-		{
-			name:   "bcrypt prefix correct password",
-			stored: "bcrypt:" + string(bcryptHash),
-			plain:  "secretpass",
-			want:   true,
-		},
-		{
-			name:   "bcrypt prefix wrong password",
-			stored: "bcrypt:" + string(bcryptHash),
-			plain:  "wrongpass",
-			want:   false,
-		},
-		{
-			name:   "plain prefix correct password",
-			stored: "plain:secretpass",
-			plain:  "secretpass",
-			want:   true,
-		},
-		{
-			name:   "plain prefix wrong password",
-			stored: "plain:secretpass",
-			plain:  "wrongpass",
-			want:   false,
-		},
-		{
-			name:   "plain prefix empty password matches empty",
-			stored: "plain:",
-			plain:  "",
-			want:   true,
-		},
-		{
-			name:   "plain prefix empty password does not match nonempty",
-			stored: "plain:",
-			plain:  "notempty",
-			want:   false,
-		},
+		{name: "bare bcrypt hash correct password", stored: string(bcryptHash), plain: "secretpass", want: true},
+		{name: "bare bcrypt hash wrong password", stored: string(bcryptHash), plain: "wrongpass", want: false},
+		{name: "bcrypt prefix correct password", stored: "bcrypt:" + string(bcryptHash), plain: "secretpass", want: true},
+		{name: "bcrypt prefix wrong password", stored: "bcrypt:" + string(bcryptHash), plain: "wrongpass", want: false},
+		{name: "plain prefix correct password", stored: "plain:secretpass", plain: "secretpass", want: true},
+		{name: "plain prefix wrong password", stored: "plain:secretpass", plain: "wrongpass", want: false},
+		{name: "plain prefix empty password matches empty", stored: "plain:", plain: "", want: true},
+		{name: "plain prefix empty password does not match nonempty", stored: "plain:", plain: "notempty", want: false},
 	}
 
 	for _, tt := range tests {
