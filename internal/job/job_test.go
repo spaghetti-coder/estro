@@ -1,6 +1,8 @@
 package job
 
 import (
+	"encoding/hex"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -9,30 +11,18 @@ import (
 func TestStoreSetGet(t *testing.T) {
 	tests := []struct {
 		name       string
-		setup      func(*Store)
 		id         string
 		wantOK     bool
 		wantStatus string
 		wantTitle  string
+		setup      func(*Store)
 	}{
-		{
-			name: "existing job",
+		{name: "existing job", id: "id1", wantOK: true, wantStatus: StatusRunning, wantTitle: "test",
 			setup: func(s *Store) {
 				s.Set("id1", &Job{Status: StatusRunning, Title: "test"})
 			},
-			id:         "id1",
-			wantOK:     true,
-			wantStatus: StatusRunning,
-			wantTitle:  "test",
 		},
-		{
-			name:       "nonexistent job",
-			setup:      func(s *Store) {},
-			id:         "nonexistent",
-			wantOK:     false,
-			wantStatus: "",
-			wantTitle:  "",
-		},
+		{name: "nonexistent job", id: "nonexistent", wantOK: false, wantStatus: "", wantTitle: "", setup: func(s *Store) {}},
 	}
 
 	for _, tt := range tests {
@@ -60,20 +50,35 @@ func TestStoreDelete(t *testing.T) {
 	s := NewStore()
 	s.Set("id1", &Job{Status: StatusDone, Title: "test"})
 	s.Delete("id1")
-	_, ok := s.Get("id1")
-	if ok {
+	if _, ok := s.Get("id1"); ok {
 		t.Error("expected job to be deleted")
 	}
 }
 
 func TestStoreScheduleCleanup(t *testing.T) {
-	s := NewStore()
-	s.Set("id1", &Job{Status: StatusDone, Title: "test"})
-	s.ScheduleCleanup("id1", 50*time.Millisecond)
-	time.Sleep(100 * time.Millisecond)
-	_, ok := s.Get("id1")
-	if ok {
-		t.Error("expected job to be cleaned up after TTL")
+	tests := []struct {
+		name  string
+		id    string
+		setup func(*Store)
+	}{
+		{name: "existing job", id: "id1",
+			setup: func(s *Store) {
+				s.Set("id1", &Job{Status: StatusDone, Title: "test"})
+			},
+		},
+		{name: "nonexistent job", id: "ghost", setup: func(*Store) {}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewStore()
+			tt.setup(s)
+			s.ScheduleCleanup(tt.id, 1*time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
+			if _, ok := s.Get(tt.id); ok {
+				t.Error("expected job to be cleaned up after TTL")
+			}
+		})
 	}
 }
 
@@ -83,35 +88,26 @@ func TestStoreMarkAllRunningAsError(t *testing.T) {
 		id         string
 		wantStatus string
 		wantStderr string
+		setup      func(*Store)
 	}{
-		{
-			name:       "running job becomes error",
-			id:         "r1",
-			wantStatus: StatusError,
-			wantStderr: "server shutting down",
+		{name: "running job becomes error", id: "r1", wantStatus: StatusError, wantStderr: "server shutting down",
+			setup: func(s *Store) {
+				s.Set("r1", &Job{Status: StatusRunning, Title: "running job"})
+			},
 		},
-		{
-			name:       "another running job becomes error",
-			id:         "r2",
-			wantStatus: StatusError,
-			wantStderr: "server shutting down",
-		},
-		{
-			name:       "done job stays done",
-			id:         "d1",
-			wantStatus: StatusDone,
-			wantStderr: "",
+		{name: "done job stays done with existing stderr", id: "d1", wantStatus: StatusDone, wantStderr: "original error",
+			setup: func(s *Store) {
+				s.Set("d1", &Job{Status: StatusDone, Title: "done job", Stderr: "original error"})
+			},
 		},
 	}
 
-	s := NewStore()
-	s.Set("r1", &Job{Status: StatusRunning, Title: "running job"})
-	s.Set("r2", &Job{Status: StatusRunning, Title: "another running"})
-	s.Set("d1", &Job{Status: StatusDone, Title: "done job"})
-	s.MarkAllRunningAsError("server shutting down")
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			s := NewStore()
+			tt.setup(s)
+			s.MarkAllRunningAsError("server shutting down")
+
 			got, _ := s.Get(tt.id)
 			if got.Status != tt.wantStatus {
 				t.Errorf("expected status %q, got %q", tt.wantStatus, got.Status)
@@ -123,14 +119,18 @@ func TestStoreMarkAllRunningAsError(t *testing.T) {
 	}
 }
 
+// Verifies Store is safe for concurrent Set/Get with overlapping keys.
+// Correctness is checked by -race detector, not by assertions.
 func TestStoreConcurrentAccess(t *testing.T) {
 	s := NewStore()
 	var wg sync.WaitGroup
+
+	// 26 keys, 100 goroutines → intentional collisions test mutex correctness
 	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			id := string(rune('a' + i%26))
+			id := fmt.Sprintf("id%d", i%26)
 			s.Set(id, &Job{Status: StatusRunning, Title: id})
 		}(i)
 	}
@@ -138,7 +138,7 @@ func TestStoreConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			id := string(rune('a' + i%26))
+			id := fmt.Sprintf("id%d", i%26)
 			s.Get(id)
 		}(i)
 	}
@@ -153,10 +153,8 @@ func TestGenerateID(t *testing.T) {
 	if len(id1) != 32 {
 		t.Errorf("expected length 32, got %d", len(id1))
 	}
-	for i, c := range id1 {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			t.Errorf("invalid hex character %q at position %d", c, i)
-		}
+	if _, err := hex.DecodeString(id1); err != nil {
+		t.Errorf("ID is not valid hex: %v", err)
 	}
 
 	id2, err := GenerateID()

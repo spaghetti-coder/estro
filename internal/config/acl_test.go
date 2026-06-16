@@ -28,22 +28,8 @@ func TestIsAccessible(t *testing.T) {
 	}
 }
 
-func TestRestrictedTrue_NilAllowedIsPublic(t *testing.T) {
-	flat := FlatService{Restricted: true, Allowed: nil}
-	if !flat.IsAccessible("guest") {
-		t.Error("restricted=true + nil allowed should be public")
-	}
-}
-
-func TestRestrictedDefaultIsPublic(t *testing.T) {
-	flat := FlatService{}
-	if !flat.IsAccessible("") {
-		t.Error("default (restricted=true, nil allowed) should be public")
-	}
-}
-
 func TestResolveAllowed(t *testing.T) {
-	users := map[string]*UserConfig{
+	defaultUsers := map[string]*UserConfig{
 		"alice": {Password: "hash", Groups: []string{"admins"}},
 		"bob":   {Password: "hash", Groups: []string{"admins", "family"}},
 	}
@@ -51,33 +37,23 @@ func TestResolveAllowed(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
+		users map[string]*UserConfig
 		want  []string // nil means nil result
 	}{
-		{"nil input", nil, nil},
-		{"empty slice", []string{}, nil},
-		{"group expansion", []string{"admins"}, []string{"alice", "bob"}},
-		{"direct username", []string{"guest"}, []string{"guest"}},
-		{"nonexistent group", []string{"nonexistent-group"}, nil},
-		{"username-group collision", []string{"admins"}, []string{"admins", "alice"}},
+		{"nil input", nil, defaultUsers, nil},
+		{"empty slice", []string{}, defaultUsers, nil},
+		{"group expansion", []string{"admins"}, defaultUsers, []string{"alice", "bob"}},
+		{"direct username", []string{"guest"}, map[string]*UserConfig{"guest": {Password: "hash"}}, []string{"guest"}},
+		{"nonexistent group", []string{"nonexistent-group"}, map[string]*UserConfig{"alice": {Password: "hash", Groups: []string{"admins"}}}, nil},
+		{"username-group collision", []string{"admins"}, map[string]*UserConfig{
+			"admins": {Password: "hash", Groups: []string{}},
+			"alice":  {Password: "hash", Groups: []string{"admins"}},
+		}, []string{"admins", "alice"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testUsers := users
-			if tt.name == "username-group collision" {
-				testUsers = map[string]*UserConfig{
-					"admins": {Password: "hash", Groups: []string{}},
-					"alice":  {Password: "hash", Groups: []string{"admins"}},
-				}
-			}
-			if tt.name == "direct username" {
-				testUsers = map[string]*UserConfig{"guest": {Password: "hash"}}
-			}
-			if tt.name == "nonexistent group" {
-				testUsers = map[string]*UserConfig{"alice": {Password: "hash", Groups: []string{"admins"}}}
-			}
-
-			result := resolveAllowed(tt.input, testUsers)
+			result := resolveAllowed(tt.input, tt.users)
 			if (tt.want == nil) != (result == nil) {
 				t.Errorf("nil mismatch: want nil=%v, got nil=%v", tt.want == nil, result == nil)
 				return

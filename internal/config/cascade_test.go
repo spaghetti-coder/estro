@@ -57,8 +57,7 @@ func TestStringListUnmarshalInvalid(t *testing.T) {
 		Val StringList `yaml:"val,omitempty"`
 	}
 	var w wrapper
-	err := yaml.Load([]byte("val:\n  key: value\n"), &w)
-	if err == nil {
+	if err := yaml.Load([]byte("val:\n  key: value\n"), &w); err == nil {
 		t.Error("expected error for mapping node, got nil")
 	}
 }
@@ -79,10 +78,11 @@ func TestCascadeStringList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := cascadeStringList(tt.svc, tt.sec, tt.global)
 			if (tt.want == nil) != (got == nil) {
-				t.Fatalf("nil mismatch: want %v, got %v", tt.want, got)
+				t.Errorf("nil mismatch: want %v, got %v", tt.want, got)
+				return
 			}
 			if !slices.Equal(got, tt.want) {
-				t.Fatalf("expected %v, got %v", tt.want, got)
+				t.Errorf("expected %v, got %v", tt.want, got)
 			}
 		})
 	}

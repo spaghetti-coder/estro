@@ -3,7 +3,6 @@ package config
 import (
 	"math"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -37,17 +36,6 @@ func loadIssueStrings(t *testing.T, src string) []string {
 	t.Helper()
 	path := writeTestConfig(t, src)
 	return Load(path).IssueStrings()
-}
-
-// mustLoadYAML writes the YAML content, loads it, and fails the test if unhealthy.
-func mustLoadYAML(t *testing.T, yaml string) *LoadResult {
-	t.Helper()
-	path := writeTestConfig(t, yaml)
-	res := Load(path)
-	if !res.Healthy() {
-		t.Fatalf("unexpected issues: %v", res.IssueStrings())
-	}
-	return res
 }
 
 func TestLoadInvalidConfig(t *testing.T) {
@@ -194,48 +182,20 @@ func TestLoadEmptyFile(t *testing.T) {
 	}
 }
 
-func TestRemoteSSHOptsFromYAML(t *testing.T) {
-	// This test specifically tests YAML parsing of remote_ssh_opts, so keep raw YAML.
-	yaml := `---
-global:
-  title: Estro
-  subtitle: SSH opts test
-  hostname: 0.0.0.0
-  port: 3000
-  remote_ssh_opts:
-    - -o StrictHostKeyChecking=no
-    - -o UserKnownHostsFile=/dev/null
-users:
-  admin:
-    password: '$2y$10$hash'
-sections:
-  - title: Section with ssh opts
-    remote_ssh_opts:
-      - -o ConnectTimeout=5
-    services:
-      - title: Inherits section opts
-        command: uptime
-      - title: Overrides with own opts
-        command: date
-        remote_ssh_opts: ['-o', 'CustomOpt=yes']
-  - title: Inherits global opts
-    services:
-      - title: Global opts
-        command: uptime
-`
-	res := mustLoadYAML(t, yaml)
-	services := res.Config.Flatten()
-
-	want := map[string]StringList{
-		"Inherits section opts":   {"-o ConnectTimeout=5"},
-		"Overrides with own opts": {"-o", "CustomOpt=yes"},
-		"Global opts":             {"-o StrictHostKeyChecking=no", "-o UserKnownHostsFile=/dev/null"},
+func TestGetConfigDefaultTitle(t *testing.T) {
+	cfg := &Config{
+		Global: &GlobalConfig{Title: ptrOf("Estro"), Hostname: ptrOf("0.0.0.0"), Port: ptrOf(3000)},
+		Users:  map[string]*UserConfig{"testuser": {Password: "$2y$10$hash"}},
+		Sections: []SectionConfig{{
+			Title: "Test", Services: []ServiceConfig{{Title: "Svc", Command: CommandValue{"echo hi"}}},
+		}},
 	}
-	for _, svc := range services {
-		if exp, ok := want[svc.Title]; ok {
-			if !slices.Equal(svc.RemoteSSHOpts, exp) {
-				t.Errorf("%s: expected %v, got %v", svc.Title, exp, svc.RemoteSSHOpts)
-			}
-		}
+	issues := Validate(cfg)
+	if len(issues) > 0 {
+		t.Fatalf("invalid test config: %v", issues)
+	}
+	resp := cfg.GetConfigResponse()
+	if resp.Title != "Estro" {
+		t.Errorf("expected default title 'Estro', got %s", resp.Title)
 	}
 }

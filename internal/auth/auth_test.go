@@ -18,8 +18,24 @@ func init() {
 	SetBcryptCost(bcrypt.MinCost)
 }
 
+// setSession records a SetSessionUser call and returns a request
+// carrying the resulting session cookie.
+func setSession(t *testing.T, store sessions.Store, username string, rememberMe bool, maxAge int) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	if err := SetSessionUser(store, req, rec, username, rememberMe, maxAge); err != nil {
+		t.Fatalf("SetSessionUser: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, c := range rec.Result().Cookies() {
+		req2.AddCookie(c)
+	}
+	return req2
+}
+
 func TestGetSessionUserNotAuthenticated(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
+	store := sessions.NewCookieStore([]byte("test-secret-not-auth"))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	username := GetSessionUser(store, req)
 	if username != "" {
@@ -28,50 +44,18 @@ func TestGetSessionUserNotAuthenticated(t *testing.T) {
 }
 
 func TestSetAndGetSessionUser(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	if err := SetSessionUser(store, req, rec, "alice", false, 0); err != nil {
-		t.Fatalf("failed to set session user: %v", err)
-	}
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
-	username := GetSessionUser(store, req2)
-	if username != "alice" {
+	store := sessions.NewCookieStore([]byte("test-secret-set-get"))
+	req := setSession(t, store, "alice", false, 0)
+	if username := GetSessionUser(store, req); username != "alice" {
 		t.Errorf("expected username %q, got %q", "alice", username)
 	}
 }
 
-func TestSetSessionUserRememberMe(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	if err := SetSessionUser(store, req, rec, "bob", true, 30*24*3600); err != nil {
-		t.Fatalf("failed to set session user: %v", err)
-	}
-	cookie := rec.Header().Get("Set-Cookie")
-	if cookie == "" {
-		t.Fatal("expected Set-Cookie header")
-	}
-	if !strings.Contains(cookie, "Max-Age=") && !strings.Contains(cookie, "Expires=") {
-		t.Error("expected persistent cookie with Max-Age for rememberMe=true")
-	}
-}
-
 func TestSetSessionUserRememberMeWithTTL(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-
+	store := sessions.NewCookieStore([]byte("test-secret-ttl"))
 	ttlSeconds := 86400 // 1 day
-	if err := SetSessionUser(store, req, rec, "alice", true, ttlSeconds); err != nil {
-		t.Fatalf("SetSessionUser error: %v", err)
-	}
-
-	// Read session back and verify remember_me and expires_at
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
-	session, _ := store.Get(req2, SessionCookieName)
+	req := setSession(t, store, "alice", true, ttlSeconds)
+	session, _ := store.Get(req, SessionCookieName)
 
 	if got, _ := session.Values["user"].(string); got != "alice" {
 		t.Errorf("expected user 'alice', got %q", got)
@@ -93,17 +77,9 @@ func TestSetSessionUserRememberMeWithTTL(t *testing.T) {
 }
 
 func TestSetSessionUserRememberMeNoLimit(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-
-	if err := SetSessionUser(store, req, rec, "alice", true, math.MaxInt32); err != nil {
-		t.Fatalf("SetSessionUser error: %v", err)
-	}
-
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
-	session, _ := store.Get(req2, SessionCookieName)
+	store := sessions.NewCookieStore([]byte("test-secret-no-limit"))
+	req := setSession(t, store, "alice", true, math.MaxInt32)
+	session, _ := store.Get(req, SessionCookieName)
 
 	if got, _ := session.Values["remember_me"].(bool); !got {
 		t.Error("expected remember_me=true")
@@ -114,27 +90,23 @@ func TestSetSessionUserRememberMeNoLimit(t *testing.T) {
 }
 
 func TestSetSessionUserNoRememberMeClearsFlags(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
+	store := sessions.NewCookieStore([]byte("test-secret-clear-flags"))
 
 	// First login with rememberMe=true
-	if err := SetSessionUser(store, req, rec, "alice", true, 86400); err != nil {
-		t.Fatalf("SetSessionUser error: %v", err)
-	}
+	req := setSession(t, store, "alice", true, 86400)
 
 	// Then re-login with rememberMe=false (e.g., different device)
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
 	rec2 := httptest.NewRecorder()
-	if err := SetSessionUser(store, req2, rec2, "alice", false, 0); err != nil {
-		t.Fatalf("SetSessionUser error: %v", err)
+	if err := SetSessionUser(store, req, rec2, "alice", false, 0); err != nil {
+		t.Fatalf("SetSessionUser: %v", err)
 	}
 
 	// Verify remember_me and expires_at are cleared
-	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req3.Header.Set("Cookie", rec2.Header().Get("Set-Cookie"))
-	session, _ := store.Get(req3, SessionCookieName)
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, c := range rec2.Result().Cookies() {
+		req2.AddCookie(c)
+	}
+	session, _ := store.Get(req2, SessionCookieName)
 
 	if _, ok := session.Values["remember_me"]; ok {
 		t.Error("expected remember_me to be cleared")
@@ -237,34 +209,55 @@ func TestHashPassword(t *testing.T) {
 			if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(tt.plain)); err != nil {
 				t.Errorf("bcrypt hash does not match plain password %q: %v", tt.plain, err)
 			}
-			users := map[string]*config.UserConfig{"u": {Password: hash}}
-			if Authenticate(users, "u", tt.plain) == nil {
-				t.Errorf("Authenticate with hash for %q returned nil", tt.plain)
-			}
 		})
 	}
 }
 
 func TestRefreshSession(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-
-	t.Run("refreshes authenticated session", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		rec := httptest.NewRecorder()
-		if err := SetSessionUser(store, req, rec, "alice", true, math.MaxInt32); err != nil {
-			t.Fatalf("SetSessionUser error: %v", err)
+	t.Run("refreshes remember-me session", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			user   string
+			maxAge int
+			hasExp bool
+		}{
+			{name: "no-limit", user: "alice", maxAge: math.MaxInt32, hasExp: false},
+			{name: "finite TTL", user: "carol", maxAge: 86400, hasExp: true},
 		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				s := sessions.NewCookieStore([]byte("test-refresh-" + tt.name))
 
-		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
-		rec2 := httptest.NewRecorder()
-		if err := RefreshSession(store, req2, rec2, math.MaxInt32); err != nil {
-			t.Fatalf("RefreshSession error: %v", err)
-		}
-		req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req3.Header.Set("Cookie", rec2.Header().Get("Set-Cookie"))
-		if got := GetSessionUser(store, req3); got != "alice" {
-			t.Errorf("expected alice after refresh, got %q", got)
+				// Set
+				req := setSession(t, s, tt.user, true, tt.maxAge)
+
+				// Refresh
+				rec := httptest.NewRecorder()
+				if err := RefreshSession(s, req, rec, tt.maxAge); err != nil {
+					t.Fatalf("RefreshSession: %v", err)
+				}
+
+				// Verify user survives
+				req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+				for _, c := range rec.Result().Cookies() {
+					req2.AddCookie(c)
+				}
+				if got := GetSessionUser(s, req2); got != tt.user {
+					t.Errorf("user = %q, want %q", got, tt.user)
+				}
+
+				// Verify remember_me persists
+				session, _ := s.Get(req2, SessionCookieName)
+				if rm, _ := session.Values["remember_me"].(bool); !rm {
+					t.Error("remember_me lost after refresh")
+				}
+
+				// Verify expires_at presence matches expectation
+				_, hasExpiresAt := session.Values["expires_at"]
+				if hasExpiresAt != tt.hasExp {
+					t.Errorf("expires_at present = %v, want %v", hasExpiresAt, tt.hasExp)
+				}
+			})
 		}
 	})
 
@@ -282,16 +275,9 @@ func TestRefreshSession(t *testing.T) {
 
 	t.Run("no-op for session-only cookie (rememberMe=false)", func(t *testing.T) {
 		s := sessions.NewCookieStore([]byte("test-secret3"))
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		rec := httptest.NewRecorder()
-		if err := SetSessionUser(s, req, rec, "bob", false, 0); err != nil {
-			t.Fatalf("SetSessionUser error: %v", err)
-		}
-
-		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
+		req := setSession(t, s, "bob", false, 0)
 		rec2 := httptest.NewRecorder()
-		if err := RefreshSession(s, req2, rec2, math.MaxInt32); err != nil {
+		if err := RefreshSession(s, req, rec2, math.MaxInt32); err != nil {
 			t.Fatalf("RefreshSession error: %v", err)
 		}
 		if hasCookie := rec2.Header().Get("Set-Cookie"); hasCookie != "" {
@@ -314,35 +300,13 @@ func TestRefreshSession(t *testing.T) {
 		}
 
 		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
+		for _, c := range rec.Result().Cookies() {
+			req2.AddCookie(c)
+		}
 		rec2 := httptest.NewRecorder()
 		err := RefreshSession(s, req2, rec2, 3600)
 		if err != ErrSessionExpired {
 			t.Errorf("expected ErrSessionExpired, got %v", err)
-		}
-	})
-
-	t.Run("slides remember-me session with hard TTL", func(t *testing.T) {
-		s := sessions.NewCookieStore([]byte("test-secret5"))
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		rec := httptest.NewRecorder()
-
-		ttlSeconds := 86400 // 1 day
-		if err := SetSessionUser(s, req, rec, "carol", true, ttlSeconds); err != nil {
-			t.Fatalf("SetSessionUser error: %v", err)
-		}
-
-		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
-		rec2 := httptest.NewRecorder()
-		if err := RefreshSession(s, req2, rec2, ttlSeconds); err != nil {
-			t.Fatalf("RefreshSession error: %v", err)
-		}
-
-		req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req3.Header.Set("Cookie", rec2.Header().Get("Set-Cookie"))
-		if got := GetSessionUser(s, req3); got != "carol" {
-			t.Errorf("expected carol after refresh, got %q", got)
 		}
 	})
 
@@ -362,7 +326,9 @@ func TestRefreshSession(t *testing.T) {
 		}
 
 		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
+		for _, c := range rec.Result().Cookies() {
+			req2.AddCookie(c)
+		}
 		rec2 := httptest.NewRecorder()
 		if err := RefreshSession(s, req2, rec2, 2592000); err != nil {
 			t.Fatalf("RefreshSession error: %v", err)
@@ -370,7 +336,9 @@ func TestRefreshSession(t *testing.T) {
 
 		// Verify session remains valid after refresh with capped MaxAge
 		req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req3.Header.Set("Cookie", rec2.Header().Get("Set-Cookie"))
+		for _, c := range rec2.Result().Cookies() {
+			req3.AddCookie(c)
+		}
 		if got := GetSessionUser(s, req3); got != "dave" {
 			t.Errorf("expected dave after refresh, got %q", got)
 		}
@@ -400,24 +368,17 @@ func TestRefreshSession(t *testing.T) {
 }
 
 func TestDestroySession(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	if err := SetSessionUser(store, req, rec, "alice", false, 0); err != nil {
-		t.Fatalf("failed to set session user: %v", err)
-	}
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.Header.Set("Cookie", rec.Header().Get("Set-Cookie"))
+	store := sessions.NewCookieStore([]byte("test-secret-destroy"))
+	req := setSession(t, store, "alice", false, 0)
 	rec2 := httptest.NewRecorder()
-	if err := DestroySession(store, req2, rec2); err != nil {
+	if err := DestroySession(store, req, rec2); err != nil {
 		t.Fatalf("failed to destroy session: %v", err)
 	}
-	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-	cookies := rec2.Result().Cookies()
-	for _, c := range cookies {
-		req3.AddCookie(c)
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, c := range rec2.Result().Cookies() {
+		req2.AddCookie(c)
 	}
-	username := GetSessionUser(store, req3)
+	username := GetSessionUser(store, req2)
 	if username != "" {
 		t.Errorf("expected empty username after session destruction, got %q", username)
 	}

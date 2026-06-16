@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -158,7 +159,7 @@ func loginAs(t *testing.T, e *echo.Echo, username, password string, rememberMe b
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login failed: expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	cookie := findSessionCookie(rec)
+	cookie := extractSessionCookie(rec)
 	if cookie == nil {
 		t.Fatal("expected session cookie after login")
 	}
@@ -174,10 +175,19 @@ func extractSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 		}
 		parts := strings.SplitN(v, "=", 2)
 		val := parts[1]
+		var maxAge int
 		if idx := strings.Index(val, ";"); idx >= 0 {
+			// Parse attributes from the remainder
+			attrs := val[idx+1:]
 			val = val[:idx]
+			for _, attr := range strings.Split(attrs, ";") {
+				attr = strings.TrimSpace(attr)
+				if strings.HasPrefix(attr, "Max-Age=") {
+					_, _ = fmt.Sscanf(attr, "Max-Age=%d", &maxAge)
+				}
+			}
 		}
-		return &http.Cookie{Name: "connect.sid", Value: val}
+		return &http.Cookie{Name: "connect.sid", Value: val, MaxAge: maxAge}
 	}
 	return nil
 }
@@ -190,15 +200,6 @@ func hasSessionCookie(rec *httptest.ResponseRecorder) bool {
 		}
 	}
 	return false
-}
-
-func findSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == "connect.sid" {
-			return c
-		}
-	}
-	return nil
 }
 
 // decodeJSON is a test helper to decode a JSON response body.
@@ -230,6 +231,21 @@ func doRequestWithBody(e *echo.Echo, method, path, body string, cookie *http.Coo
 	return rec
 }
 
+func createJob(t *testing.T, e *echo.Echo, cookie *http.Cookie) string {
+	t.Helper()
+	rec := doRequest(e, http.MethodPost, "/run/0", cookie)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("createJob: expected 202, got %d", rec.Code)
+	}
+	var result map[string]any
+	decodeJSON(t, rec.Body.Bytes(), &result)
+	jobID, _ := result["jobId"].(string)
+	if jobID == "" {
+		t.Fatal("createJob: no jobId in response")
+	}
+	return jobID
+}
+
 func TestGetConfig(t *testing.T) {
 	e, _, _ := setupTestEnv(t)
 	rec := doRequest(e, http.MethodGet, "/config", nil)
@@ -249,21 +265,6 @@ func TestGetConfig(t *testing.T) {
 	}
 	if result["degraded"] != false {
 		t.Errorf("expected degraded=false, got %v", result["degraded"])
-	}
-}
-
-func TestGetConfigDefaultTitle(t *testing.T) {
-	cfg := &config.Config{
-		Global: &config.GlobalConfig{Title: ptrOf("Estro"), Hostname: ptrOf("0.0.0.0"), Port: ptrOf(3000)},
-		Users:  map[string]*config.UserConfig{"testuser": {Password: "$2y$10$hash"}},
-		Sections: []config.SectionConfig{{
-			Title: "Test", Services: []config.ServiceConfig{{Title: "Svc", Command: config.CommandValue{"echo hi"}}},
-		}},
-	}
-	res := loadConfig(t, cfg)
-	resp := res.Config.GetConfigResponse()
-	if resp.Title != "Estro" {
-		t.Errorf("expected default title 'Estro', got %s", resp.Title)
 	}
 }
 
@@ -323,39 +324,46 @@ func TestGetMeAfterLogin(t *testing.T) {
 	}
 }
 
-func TestLoginValidCredentials(t *testing.T) {
+func TestLogin(t *testing.T) {
 	e, _, _ := setupTestEnv(t)
-	rec := doRequestWithBody(e, http.MethodPost, "/login", `{"username":"alice","password":"changeme1"}`, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+		check    func(t *testing.T, rec *httptest.ResponseRecorder)
+	}{
+		{name: "valid credentials", body: `{"username":"alice","password":"changeme1"}`, wantCode: http.StatusOK,
+			check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				var result map[string]any
+				decodeJSON(t, rec.Body.Bytes(), &result)
+				if result["username"] != "alice" {
+					t.Errorf("expected username alice, got %v", result["username"])
+				}
+			},
+		},
+		{name: "invalid password", body: `{"username":"alice","password":"wrong"}`, wantCode: http.StatusUnauthorized},
+		{name: "remember me sets persistent cookie", body: `{"username":"alice","password":"changeme1","rememberMe":true}`, wantCode: http.StatusOK,
+			check: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				cookie := extractSessionCookie(rec)
+				if cookie == nil {
+					t.Fatal("expected session cookie")
+				}
+				if cookie.MaxAge <= 0 {
+					t.Errorf("expected persistent cookie, got MaxAge=%d", cookie.MaxAge)
+				}
+			},
+		},
 	}
-	var result map[string]any
-	decodeJSON(t, rec.Body.Bytes(), &result)
-	if result["username"] != "alice" {
-		t.Errorf("expected username 'alice', got %v", result["username"])
-	}
-}
-
-func TestLoginInvalidPassword(t *testing.T) {
-	e, _, _ := setupTestEnv(t)
-	rec := doRequestWithBody(e, http.MethodPost, "/login", `{"username":"alice","password":"wrong"}`, nil)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestLoginRememberMe(t *testing.T) {
-	e, _, _ := setupTestEnv(t)
-	rec := doRequestWithBody(e, http.MethodPost, "/login", `{"username":"alice","password":"changeme1","rememberMe":true}`, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	cookie := findSessionCookie(rec)
-	if cookie == nil {
-		t.Fatal("expected session cookie to be set")
-	}
-	if cookie.MaxAge <= 0 {
-		t.Errorf("expected persistent cookie with MaxAge > 0, got MaxAge=%d", cookie.MaxAge)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := doRequestWithBody(e, http.MethodPost, "/login", tt.body, nil)
+			if rec.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d: %s", tt.wantCode, rec.Code, rec.Body.String())
+			}
+			if tt.check != nil {
+				tt.check(t, rec)
+			}
+		})
 	}
 }
 
@@ -371,16 +379,7 @@ func TestLogout(t *testing.T) {
 func TestRunServiceReturnsJobId(t *testing.T) {
 	e, _, store := setupTestEnv(t)
 	cookie := loginAs(t, e, "alice", "changeme1", false)
-	rec := doRequest(e, http.MethodPost, "/run/0", cookie)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var result map[string]any
-	decodeJSON(t, rec.Body.Bytes(), &result)
-	jobID, _ := result["jobId"].(string)
-	if jobID == "" {
-		t.Fatal("expected jobId in response")
-	}
+	jobID := createJob(t, e, cookie)
 
 	var j *job.Job
 	var ok bool
@@ -399,34 +398,19 @@ func TestRunServiceReturnsJobId(t *testing.T) {
 func TestGetJobRunning(t *testing.T) {
 	e, _, _ := setupTestEnv(t)
 	cookie := loginAs(t, e, "alice", "changeme1", false)
-	rec := doRequest(e, http.MethodPost, "/run/0", cookie)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", rec.Code)
-	}
-	var runResult map[string]any
-	decodeJSON(t, rec.Body.Bytes(), &runResult)
-	jobID, _ := runResult["jobId"].(string)
+	jobID := createJob(t, e, cookie)
 
-	rec2 := doRequest(e, http.MethodGet, "/jobs/"+jobID, cookie)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec2.Code)
+	rec := doRequest(e, http.MethodGet, "/jobs/"+jobID, cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
 
 func TestGetJobCompleted(t *testing.T) {
-	store := job.NewStore()
+	e, _, store := setupTestEnv(t)
 	store.Set("test-job", &job.Job{Status: job.StatusDone, Title: "Test", Stdout: "hello"})
 
-	res := loadConfig(t, buildTestConfig())
-	sessionSecret, _ := auth.GenerateSessionSecret()
-	sessionStore := auth.NewSessionStore(sessionSecret)
-	h := NewHandler(res, store, sessionStore, context.Background())
-	e := echo.New()
-	e.GET("/jobs/:id", h.getJob)
-
-	req := httptest.NewRequest(http.MethodGet, "/jobs/test-job", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	rec := doRequest(e, http.MethodGet, "/jobs/test-job", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -467,22 +451,23 @@ func TestRunServiceNotFound(t *testing.T) {
 	}
 }
 
+func findServiceIndex(t *testing.T, cfg *config.Config, title string) int {
+	t.Helper()
+	for i, svc := range cfg.Flatten() {
+		if svc.Title == title {
+			return i
+		}
+	}
+	t.Fatalf("service %q not found", title)
+	return -1
+}
+
 func TestRunServiceForbidden(t *testing.T) {
 	e, _, _ := setupTestEnv(t)
 	cookie := loginAs(t, e, "guest", "changeme3", false)
 
 	cfg := buildTestConfig()
-	services := cfg.Flatten()
-	restrictedIndex := -1
-	for i, svc := range services {
-		if !svc.IsAccessible("guest") {
-			restrictedIndex = i
-			break
-		}
-	}
-	if restrictedIndex == -1 {
-		t.Skip("no restricted services found to test")
-	}
+	restrictedIndex := findServiceIndex(t, cfg, "Admin only")
 
 	rec := doRequest(e, http.MethodPost, "/run/"+strconv.Itoa(restrictedIndex), cookie)
 	if rec.Code != http.StatusForbidden {
@@ -579,57 +564,68 @@ func TestHealthyIndexReturns200(t *testing.T) {
 	}
 }
 
-func TestHealthzDegraded(t *testing.T) {
+func TestDegradedEndpoints(t *testing.T) {
 	e := degradedEnv(t)
-	rec := doRequest(e, http.MethodGet, "/healthz", nil)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d", rec.Code)
+	tests := []struct {
+		name     string
+		method   string
+		path     string
+		wantCode int
+		check    func(t *testing.T, body []byte)
+	}{
+		{name: "healthz returns 503", method: http.MethodGet, path: "/healthz", wantCode: http.StatusServiceUnavailable,
+			check: func(t *testing.T, body []byte) {
+				var result struct {
+					Status string   `json:"status"`
+					Issues []string `json:"issues"`
+				}
+				decodeJSON(t, body, &result)
+				if result.Status != "error" || len(result.Issues) == 0 {
+					t.Errorf("expected status=error with issues, got %+v", result)
+				}
+			},
+		},
+		{name: "services returns empty array", method: http.MethodGet, path: "/services", wantCode: http.StatusOK,
+			check: func(t *testing.T, body []byte) {
+				if strings.TrimSpace(string(body)) != "[]" {
+					t.Errorf("expected [], got %s", body)
+				}
+			},
+		},
+		{name: "config has degraded flag and issues", method: http.MethodGet, path: "/config", wantCode: http.StatusOK,
+			check: func(t *testing.T, body []byte) {
+				var result struct {
+					Title    string   `json:"title"`
+					Degraded bool     `json:"degraded"`
+					Issues   []string `json:"issues"`
+				}
+				decodeJSON(t, body, &result)
+				if !result.Degraded {
+					t.Error("expected degraded=true")
+				}
+				if result.Title != "Estro" {
+					t.Errorf("expected title Estro, got %s", result.Title)
+				}
+				if len(result.Issues) == 0 {
+					t.Error("expected non-empty issues")
+				}
+			},
+		},
 	}
-	var body struct {
-		Status string   `json:"status"`
-		Issues []string `json:"issues"`
-	}
-	decodeJSON(t, rec.Body.Bytes(), &body)
-	if body.Status != "error" || len(body.Issues) == 0 {
-		t.Fatalf("expected status=error with issues, got %+v", body)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := doRequest(e, tt.method, tt.path, nil)
+			if rec.Code != tt.wantCode {
+				t.Errorf("expected %d, got %d", tt.wantCode, rec.Code)
+			}
+			if tt.check != nil {
+				tt.check(t, rec.Body.Bytes())
+			}
+		})
 	}
 }
 
-func TestConfigDegradedIssues(t *testing.T) {
-	e := degradedEnv(t)
-	rec := doRequest(e, http.MethodGet, "/config", nil)
-	var body struct {
-		Degraded bool     `json:"degraded"`
-		Issues   []string `json:"issues"`
-	}
-	decodeJSON(t, rec.Body.Bytes(), &body)
-	if !body.Degraded || len(body.Issues) == 0 {
-		t.Fatalf("expected degraded with issues, got %+v", body)
-	}
-}
-
-func TestConfigDegradedKeepsDefaultTitle(t *testing.T) {
-	e := degradedEnv(t)
-	rec := doRequest(e, http.MethodGet, "/config", nil)
-	var body struct {
-		Title    string `json:"title"`
-		Degraded bool   `json:"degraded"`
-	}
-	decodeJSON(t, rec.Body.Bytes(), &body)
-	if !body.Degraded || body.Title != "Estro" {
-		t.Fatalf("expected degraded with default title 'Estro', got %+v", body)
-	}
-}
-
-func TestServicesDegradedEmpty(t *testing.T) {
-	e := degradedEnv(t)
-	rec := doRequest(e, http.MethodGet, "/services", nil)
-	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
-		t.Fatalf("expected 200 []; got %d %q", rec.Code, rec.Body.String())
-	}
-}
-
-func TestListServices_RestrictedHiddenFromUnauthorized(t *testing.T) {
+func TestListServicesRestrictedHiddenFromUnauthorized(t *testing.T) {
 	e, _, _ := setupTestEnvWithConfig(t, buildRestrictedTestConfig())
 	rec := doRequest(e, http.MethodGet, "/services", nil)
 	if rec.Code != http.StatusOK {
@@ -644,7 +640,7 @@ func TestListServices_RestrictedHiddenFromUnauthorized(t *testing.T) {
 	}
 }
 
-func TestListServices_RestrictedVisibleForAllowedUser(t *testing.T) {
+func TestListServicesRestrictedVisibleForAllowedUser(t *testing.T) {
 	e, _, _ := setupTestEnvWithConfig(t, buildRestrictedTestConfig())
 	cookie := loginAs(t, e, "alice", "changeme1", false)
 	rec := doRequest(e, http.MethodGet, "/services", cookie)
@@ -664,7 +660,7 @@ func TestListServices_RestrictedVisibleForAllowedUser(t *testing.T) {
 	}
 }
 
-func TestListServices_RestrictedFalse_VisibleButNotAccessible(t *testing.T) {
+func TestListServicesRestrictedFalseVisibleButNotAccessible(t *testing.T) {
 	e, _, _ := setupTestEnvWithConfig(t, buildRestrictedTestConfig())
 	cookie := loginAs(t, e, "guest", "changeme3", false)
 	rec := doRequest(e, http.MethodGet, "/services", cookie)
@@ -687,7 +683,7 @@ func TestListServices_RestrictedFalse_VisibleButNotAccessible(t *testing.T) {
 	}
 }
 
-func TestRunService_RestrictedHidden_Returns404(t *testing.T) {
+func TestRunServiceRestrictedHiddenReturns404(t *testing.T) {
 	e, _, _ := setupTestEnvWithConfig(t, buildRestrictedTestConfig())
 	cookie := loginAs(t, e, "guest", "changeme3", false)
 	rec := doRequest(e, http.MethodPost, "/run/1", cookie)
@@ -733,53 +729,38 @@ func TestExecuteAsyncStderr(t *testing.T) {
 	}
 }
 
-func TestSessionSlidingRefreshesCookie(t *testing.T) {
-	cfg := buildTestConfig()
-	cfg.Global.SessionTTL = ptrOf(0) // no limit → sliding enabled
-	e, _, _ := setupTestEnvWithConfig(t, cfg)
-
-	cookie := loginAs(t, e, "alice", "changeme1", true)
-
-	rec := doRequest(e, http.MethodGet, "/me", cookie)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
+func TestSessionSliding(t *testing.T) {
+	tests := []struct {
+		name       string
+		sessionTTL int // 0 = unlimited
+	}{
+		{"unlimited TTL slides cookie", 0},
+		{"explicit TTL slides cookie", 720},
 	}
-	if !hasSessionCookie(rec) {
-		t.Fatal("expected refreshed session cookie from sliding middleware")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := buildTestConfig()
+			cfg.Global.SessionTTL = ptrOf(tt.sessionTTL)
+			e, _, _ := setupTestEnvWithConfig(t, cfg)
 
-	// extract refreshed cookie from header (Go's ReadSetCookies rejects '|' in values)
-	freshCookie := extractSessionCookie(rec)
-	rec2 := doRequest(e, http.MethodGet, "/me", freshCookie)
-	var result map[string]any
-	decodeJSON(t, rec2.Body.Bytes(), &result)
-	if result["username"] != "alice" {
-		t.Errorf("expected alice after sliding refresh, got %v", result["username"])
-	}
-}
+			cookie := loginAs(t, e, "alice", "changeme1", true)
 
-func TestSessionSlidingEnabledWithTTL(t *testing.T) {
-	cfg := buildTestConfig()
-	cfg.Global.SessionTTL = ptrOf(720) // explicit TTL → sliding enabled for remember-me
-	e, _, _ := setupTestEnvWithConfig(t, cfg)
+			rec := doRequest(e, http.MethodGet, "/me", cookie)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			if !hasSessionCookie(rec) {
+				t.Fatal("expected refreshed session cookie from sliding middleware")
+			}
 
-	cookie := loginAs(t, e, "alice", "changeme1", true)
-
-	rec := doRequest(e, http.MethodGet, "/me", cookie)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if !hasSessionCookie(rec) {
-		t.Error("expected cookie refresh for remember-me session with explicit TTL")
-	}
-
-	// Sliding should preserve the session
-	freshCookie := extractSessionCookie(rec)
-	rec2 := doRequest(e, http.MethodGet, "/me", freshCookie)
-	var result map[string]any
-	decodeJSON(t, rec2.Body.Bytes(), &result)
-	if result["username"] != "alice" {
-		t.Errorf("expected alice after sliding refresh, got %v", result["username"])
+			freshCookie := extractSessionCookie(rec)
+			rec2 := doRequest(e, http.MethodGet, "/me", freshCookie)
+			var result map[string]any
+			decodeJSON(t, rec2.Body.Bytes(), &result)
+			if result["username"] != "alice" {
+				t.Errorf("expected alice after sliding refresh, got %v", result["username"])
+			}
+		})
 	}
 }
 

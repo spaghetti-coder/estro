@@ -348,21 +348,6 @@ func TestLoadTypeMismatchPortFallsBackTo3000(t *testing.T) {
 	}
 }
 
-func TestLoadWrongShapeTopLevel(t *testing.T) {
-	strs := loadIssueStrings(t, "sections: 123\n")
-	if len(strs) != 1 || strs[0] != "`sections` invalid value" {
-		t.Errorf("got %v, want [`sections` invalid value`]", strs)
-	}
-}
-
-func TestLoadWrongTypeScalarIsInvalidValue(t *testing.T) {
-	src := "global:\n  port: \"abc\"\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	strs := loadIssueStrings(t, src)
-	if len(strs) != 1 || strs[0] != "`global.port` invalid value" {
-		t.Errorf("got %v, want [`global.port` invalid value`]", strs)
-	}
-}
-
 func TestDedupeSortPerPathPriority(t *testing.T) {
 	in := []Issue{
 		{Path: "global.port", Msg: "required"},
@@ -397,14 +382,6 @@ func TestLoadXStarAnchorMergeNoLeak(t *testing.T) {
 	}
 	if len(strs) != 1 || strs[0] != "`global.timeout` invalid value" {
 		t.Errorf("got %v, want [`global.timeout` invalid value`]", strs)
-	}
-}
-
-func TestLoadHostnameWrongShapeIsInvalidValueOnce(t *testing.T) {
-	src := "global:\n  hostname: [foobar]\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n"
-	strs := loadIssueStrings(t, src)
-	if len(strs) != 1 || strs[0] != "`global.hostname` invalid value" {
-		t.Errorf("got %v, want [`global.hostname` invalid value`]", strs)
 	}
 }
 

@@ -33,51 +33,48 @@ func setupStaticTestServer(t *testing.T) *echo.Echo {
 	return e
 }
 
-func TestStaticRootReturnsHTML(t *testing.T) {
+func TestStaticFileServing(t *testing.T) {
 	e := setupStaticTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
+	tests := []struct {
+		name       string
+		route      string
+		wantCT     string
+		wantNoCORS bool
+		wantCORS   bool
+		wantCORP   string
+		wantHTML   bool
+	}{
+		{name: "ui.js returns javascript", route: "/ui.js", wantCT: "javascript", wantNoCORS: true},
+		{name: "styles.css returns css", route: "/styles.css", wantCT: "text/css"},
+		{name: "root returns html", route: "/", wantCT: "text/html", wantHTML: true},
 	}
-	ct := rec.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/html") {
-		t.Errorf("expected text/html content type, got %q", ct)
-	}
-}
 
-func TestStaticUIJSReturnsJS(t *testing.T) {
-	e := setupStaticTestServer(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.route, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
 
-	req := httptest.NewRequest(http.MethodGet, "/ui.js", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	ct := rec.Header().Get("Content-Type")
-	if !strings.Contains(ct, "application/javascript") && !strings.Contains(ct, "text/javascript") {
-		t.Errorf("expected javascript content type, got %q", ct)
-	}
-}
-
-func TestStaticStylesCSSReturnsCSS(t *testing.T) {
-	e := setupStaticTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/styles.css", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	ct := rec.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/css") {
-		t.Errorf("expected text/css content type, got %q", ct)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			ct := rec.Header().Get("Content-Type")
+			if !strings.Contains(ct, tt.wantCT) {
+				t.Errorf("expected content type containing %q, got %q", tt.wantCT, ct)
+			}
+			if tt.wantNoCORS {
+				if acao := rec.Header().Get("Access-Control-Allow-Origin"); acao != "" {
+					t.Errorf("expected no Access-Control-Allow-Origin on %s, got %q", tt.route, acao)
+				}
+			}
+			if tt.wantHTML {
+				body := rec.Body.String()
+				if !strings.Contains(body, "<!DOCTYPE") && !strings.Contains(strings.ToLower(body), "html") {
+					t.Errorf("expected HTML body, got: %s", body[:min(len(body), 200)])
+				}
+			}
+		})
 	}
 }
 
@@ -105,22 +102,6 @@ func TestStaticFaviconSVGWithCORS(t *testing.T) {
 	}
 }
 
-func TestStaticFaviconCORSNotOnOtherRoutes(t *testing.T) {
-	e := setupStaticTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/ui.js", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	acao := rec.Header().Get("Access-Control-Allow-Origin")
-	if acao != "" {
-		t.Errorf("expected no Access-Control-Allow-Origin on /ui.js, got %q", acao)
-	}
-}
-
 func TestEmbeddedFilesExist(t *testing.T) {
 	files := []string{"index.html", "ui.js", "styles.css", "favicon.svg"}
 	subFS, err := fs.Sub(estro.StaticFS, "public")
@@ -134,32 +115,22 @@ func TestEmbeddedFilesExist(t *testing.T) {
 	}
 }
 
-func TestRunHashWithPassword(t *testing.T) {
-	exitCode := runHash([]string{"testpass"})
-	if exitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d", exitCode)
+func TestRunHash(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantExit int
+	}{
+		{name: "single password", args: []string{"testpass"}, wantExit: 0},
+		{name: "too many args", args: []string{"a", "b"}, wantExit: 1},
 	}
-}
 
-func TestRunHashTooManyArgs(t *testing.T) {
-	exitCode := runHash([]string{"a", "b"})
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1 for too many args, got %d", exitCode)
-	}
-}
-
-func TestRootReturnsIndexHTMLBody(t *testing.T) {
-	e := setupStaticTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "<!DOCTYPE") && !strings.Contains(strings.ToLower(body), "html") {
-		t.Errorf("expected HTML body, got: %s", body[:min(len(body), 200)])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exitCode := runHash(tt.args)
+			if exitCode != tt.wantExit {
+				t.Fatalf("expected exit code %d, got %d", tt.wantExit, exitCode)
+			}
+		})
 	}
 }
