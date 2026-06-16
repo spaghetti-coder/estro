@@ -221,10 +221,10 @@ func TestFlattenEnabledCascade(t *testing.T) {
 	services := cfg.Flatten()
 
 	want := map[string]bool{
-		"Disabled Service":  false,
-		"Override Enabled":  true,
-		"Normal Service":    true,
-		"Default Service":   false,
+		"Disabled Service": false,
+		"Override Enabled": true,
+		"Normal Service":   true,
+		"Default Service":  false,
 	}
 	for _, svc := range services {
 		wantVal, ok := want[svc.Title]

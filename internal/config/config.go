@@ -16,14 +16,16 @@ import (
 )
 
 const (
-	defaultHostname    = "127.0.0.1"
-	defaultPort        = 3000
 	defaultTitle       = "Estro"
 	defaultSubtitle    = ""
-	defaultTimeout     = 60
-	defaultConfirm     = true
+	defaultHostname    = "127.0.0.1"
+	defaultPort        = 3000
 	defaultCollapsable = true
 	defaultColumns     = 3
+	defaultTimeout     = 60
+	defaultConfirm     = true
+	defaultRestricted  = true
+	defaultEnabled     = true
 )
 
 // Config is the top-level Estro YAML configuration.
