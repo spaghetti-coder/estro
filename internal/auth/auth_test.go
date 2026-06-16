@@ -18,8 +18,7 @@ func init() {
 	SetBcryptCost(bcrypt.MinCost)
 }
 
-// setSession records a SetSessionUser call and returns a request
-// carrying the resulting session cookie.
+// setSession creates a request carrying a session cookie for username.
 func setSession(t *testing.T, store sessions.Store, username string, rememberMe bool, maxAge int) *http.Request {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

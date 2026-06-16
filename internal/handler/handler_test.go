@@ -166,8 +166,7 @@ func loginAs(t *testing.T, e *echo.Echo, username, password string, rememberMe b
 	return cookie
 }
 
-// extractSessionCookie parses the Set-Cookie header directly; works around Go's
-// ReadSetCookies rejecting '|' in cookie values (gorilla securecookie uses '|' as separator).
+// extractSessionCookie parses Set-Cookie directly; works around Go's ReadSetCookies rejecting '|' in values.
 func extractSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, v := range rec.Header().Values("Set-Cookie") {
 		if !strings.HasPrefix(v, "connect.sid=") {
@@ -192,7 +191,7 @@ func extractSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
-// hasSessionCookie checks if the response has a Set-Cookie header for connect.sid.
+// hasSessionCookie reports whether response has Set-Cookie for connect.sid.
 func hasSessionCookie(rec *httptest.ResponseRecorder) bool {
 	for _, v := range rec.Header().Values("Set-Cookie") {
 		if strings.HasPrefix(v, "connect.sid=") {
@@ -202,7 +201,7 @@ func hasSessionCookie(rec *httptest.ResponseRecorder) bool {
 	return false
 }
 
-// decodeJSON is a test helper to decode a JSON response body.
+// decodeJSON decodes JSON response body into v.
 func decodeJSON(t *testing.T, body []byte, v any) {
 	t.Helper()
 	if err := json.Unmarshal(body, v); err != nil {

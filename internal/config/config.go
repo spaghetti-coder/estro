@@ -28,7 +28,7 @@ const (
 	defaultEnabled     = true
 )
 
-// Config is the top-level Estro YAML configuration.
+// Config is top-level Estro YAML configuration.
 type Config struct {
 	Global   *GlobalConfig          `yaml:"global" validate:"omitempty"`
 	Users    map[string]*UserConfig `yaml:"users" validate:"omitempty,dive"`
@@ -47,7 +47,7 @@ type GlobalConfig struct {
 	LayoutFields  `yaml:",inline"`
 }
 
-// UserConfig holds a user's password and groups.
+// UserConfig holds password and groups.
 type UserConfig struct {
 	Password string     `yaml:"password" validate:"required"`
 	Groups   StringList `yaml:"groups" validate:"omitempty,dive,required"`
@@ -68,7 +68,7 @@ type ServiceConfig struct {
 	CascadeFields `yaml:",inline"`
 }
 
-// newValidator creates a fresh validator with registered tags and custom validations.
+// newValidator creates a validator with registered tags and custom validations.
 func newValidator() (*validator.Validate, error) {
 	v := validator.New()
 	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
@@ -94,7 +94,7 @@ func coalesce[T any](ptr *T, fallback T) T {
 	return cascade(ptr, nil, nil, fallback)
 }
 
-// fileIssueResult builds a degraded result for a config we couldn't read or parse.
+// fileIssueResult builds a degraded result for unreadable config.
 func fileIssueResult(msg string) *LoadResult {
 	return &LoadResult{Config: &Config{}, Issues: []Issue{{Msg: msg}}}
 }

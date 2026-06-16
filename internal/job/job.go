@@ -53,7 +53,7 @@ func (s *Store) Set(id string, job *Job) {
 	s.mu.Unlock()
 }
 
-// Get retrieves job by ID.
+// Get returns job by ID.
 func (s *Store) Get(id string) (*Job, bool) {
 	s.mu.RLock()
 	j, ok := s.jobs[id]

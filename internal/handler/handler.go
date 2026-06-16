@@ -31,8 +31,7 @@ type Handler struct {
 	services     []config.FlatService
 	issues       []string
 	degraded     bool
-	// cmdCtx is the application-lifecycle context, cancelled on server shutdown
-	// (not request-scoped); it bounds async command execution.
+	// cmdCtx bounds async command execution; cancelled on shutdown.
 	cmdCtx context.Context
 }
 
@@ -52,7 +51,7 @@ func NewHandler(res *config.LoadResult, jobStore *job.Store, sessionStore sessio
 	return h
 }
 
-// healthzResponse is the /healthz JSON body.
+// healthzResponse is /healthz JSON body.
 type healthzResponse struct {
 	Status string   `json:"status"`
 	Issues []string `json:"issues,omitempty"`
@@ -63,7 +62,7 @@ func errJSON(c *echo.Context, status int, msg string) error {
 	return c.JSON(status, map[string]string{"error": msg})
 }
 
-// tooManyLogins is the login rate-limit rejection response.
+// tooManyLogins is login rate-limit rejection response.
 func tooManyLogins(c *echo.Context) error {
 	return errJSON(c, http.StatusTooManyRequests, "Too many login attempts")
 }

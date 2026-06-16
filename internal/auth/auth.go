@@ -19,7 +19,7 @@ const SessionCookieName = "connect.sid"
 
 var bcryptCost = 13
 
-// ErrSessionExpired is returned when a session's absolute expiry has passed.
+// ErrSessionExpired signals a session past its absolute expiry.
 var ErrSessionExpired = errors.New("session expired")
 
 // SetBcryptCost overrides bcrypt cost (tests only).
@@ -63,7 +63,7 @@ func GetSessionUser(store sessions.Store, r *http.Request) string {
 	return username
 }
 
-// SetSessionUser saves username to session. Stores remember_me and expires_at for finite remember-me TTLs.
+// SetSessionUser saves username to session; stores remember_me and expires_at for finite TTLs.
 func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter, username string, rememberMe bool, maxAge int) error {
 	session, _ := store.Get(r, SessionCookieName)
 	session.Values["user"] = username
@@ -83,8 +83,7 @@ func SetSessionUser(store sessions.Store, r *http.Request, w http.ResponseWriter
 	return session.Save(r, w)
 }
 
-// RefreshSession slides cookie for remember-me sessions. Caps MaxAge at remaining time
-// via expires_at. Returns ErrSessionExpired past deadline. No-op for session-only cookies.
+// RefreshSession slides cookie for remember-me sessions; returns ErrSessionExpired past deadline.
 func RefreshSession(store sessions.Store, r *http.Request, w http.ResponseWriter, configuredTTL int) error {
 	session, _ := store.Get(r, SessionCookieName)
 	if _, ok := session.Values["user"].(string); !ok {

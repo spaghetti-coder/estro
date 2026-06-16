@@ -35,7 +35,7 @@ func validateAllowedRef(fl validator.FieldLevel) bool {
 	return false
 }
 
-// Issue is a human-readable config problem.
+// Issue is human-readable config problem.
 type Issue struct {
 	Path string // dotted path (e.g. "global.hostname"); "" for file-level problems
 	Msg  string // "required" | "invalid value" | "invalid field"
@@ -115,7 +115,7 @@ func embeddedStructNames(t reflect.Type, seen map[reflect.Type]bool) []string {
 	return names
 }
 
-// derefAll unwraps pointer, slice, array, and map types to their element type.
+// derefAll unwraps pointers, slices, arrays, and maps to their element type.
 func derefAll(t reflect.Type) reflect.Type {
 	for {
 		switch t.Kind() {
@@ -150,9 +150,7 @@ func tagMessage(tag string) string {
 	return "invalid value"
 }
 
-// Validate runs structural and value validation on the resolved Config,
-// returning any issues found. This is the validation half of Load, extracted
-// for use in tests that construct Config programmatically.
+// Validate runs structural and value validation; returns issues found.
 func Validate(cfg *Config) []Issue {
 	v, err := newValidator()
 	if err != nil {

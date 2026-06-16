@@ -119,8 +119,7 @@ func TestStoreMarkAllRunningAsError(t *testing.T) {
 	}
 }
 
-// Verifies Store is safe for concurrent Set/Get with overlapping keys.
-// Correctness is checked by -race detector, not by assertions.
+// Store safe for concurrent Set/Get with overlapping keys; correctness checked by -race.
 func TestStoreConcurrentAccess(t *testing.T) {
 	s := NewStore()
 	var wg sync.WaitGroup

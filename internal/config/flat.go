@@ -21,7 +21,7 @@ type FlatService struct {
 	SectionTitle string
 }
 
-// SerializedService is the JSON-ready service for the frontend.
+// SerializedService is JSON-ready service for frontend.
 type SerializedService struct {
 	ID                 int      `json:"id"`
 	Title              string   `json:"title"`
@@ -47,7 +47,7 @@ type ConfigResponse struct {
 }
 
 // clientTimeoutBuffer is 10s added to server timeout for client overhead.
-const clientTimeoutBuffer = 10000 // 10s buffer added to server-side timeout for client waits
+const clientTimeoutBuffer = 10000
 
 // Flatten expands all services with cascades resolved inline.
 func (c *Config) Flatten() []FlatService {
