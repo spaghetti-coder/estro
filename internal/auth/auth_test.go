@@ -230,18 +230,14 @@ func TestHashPassword(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prefixed, err := HashPassword(tt.plain)
+			hash, err := HashPassword(tt.plain)
 			if err != nil {
 				t.Fatalf("HashPassword(%q) returned error: %v", tt.plain, err)
 			}
-			if !strings.HasPrefix(prefixed, "bcrypt:") {
-				t.Errorf("expected prefix 'bcrypt:', got %q", prefixed)
-			}
-			rawHash := strings.TrimPrefix(prefixed, "bcrypt:")
-			if err := bcrypt.CompareHashAndPassword([]byte(rawHash), []byte(tt.plain)); err != nil {
+			if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(tt.plain)); err != nil {
 				t.Errorf("bcrypt hash does not match plain password %q: %v", tt.plain, err)
 			}
-			users := map[string]*config.UserConfig{"u": {Password: prefixed}}
+			users := map[string]*config.UserConfig{"u": {Password: hash}}
 			if Authenticate(users, "u", tt.plain) == nil {
 				t.Errorf("Authenticate with hash for %q returned nil", tt.plain)
 			}

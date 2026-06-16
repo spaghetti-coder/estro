@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -123,11 +122,11 @@ func runHash(args []string) int {
 		return 1
 	}
 
-	prefixed, err := auth.HashPassword(plainPassword)
+	hash, err := auth.HashPassword(plainPassword)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	fmt.Println(strings.TrimPrefix(prefixed, "bcrypt:"))
+	fmt.Println(hash)
 	return 0
 }

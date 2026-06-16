@@ -47,13 +47,13 @@ func Authenticate(users map[string]*config.UserConfig, username, password string
 	return nil
 }
 
-// HashPassword returns a bcrypt hash with "bcrypt:" prefix.
+// HashPassword returns a bcrypt hash.
 func HashPassword(plainPassword string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcryptCost)
 	if err != nil {
 		return "", fmt.Errorf("generate bcrypt hash: %w", err)
 	}
-	return "bcrypt:" + string(hash), nil
+	return string(hash), nil
 }
 
 // GetSessionUser returns the logged-in username, or "".
