@@ -66,8 +66,8 @@ type ServiceConfig struct {
 	CascadeFields `yaml:",inline"`
 }
 
-// validate is a singleton validator, avoiding repeated allocation.
-var validate = func() *validator.Validate {
+// newValidator creates a fresh validator with registered tags and custom validations.
+func newValidator() (*validator.Validate, error) {
 	v := validator.New()
 	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
 		name := strings.SplitN(fld.Tag.Get("yaml"), ",", 2)[0]
@@ -76,18 +76,15 @@ var validate = func() *validator.Validate {
 		}
 		return name
 	})
-	return v
-}()
-
-func init() {
 	for tag, fn := range map[string]validator.Func{
 		"remote_host": validateRemoteHost,
 		"allowed_ref": validateAllowedRef,
 	} {
-		if err := validate.RegisterValidation(tag, fn); err != nil {
-			panic(err)
+		if err := v.RegisterValidation(tag, fn); err != nil {
+			return nil, err
 		}
 	}
+	return v, nil
 }
 
 // coalesce returns *ptr or fallback when nil; single-level cascade.

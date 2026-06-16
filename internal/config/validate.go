@@ -154,7 +154,11 @@ func tagMessage(tag string) string {
 // returning any issues found. This is the validation half of Load, extracted
 // for use in tests that construct Config programmatically.
 func Validate(cfg *Config) []Issue {
-	err := validate.Struct(*cfg)
+	v, err := newValidator()
+	if err != nil {
+		return []Issue{{Msg: err.Error()}}
+	}
+	err = v.Struct(*cfg)
 	if err == nil {
 		return nil
 	}

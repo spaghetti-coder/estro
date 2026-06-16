@@ -73,8 +73,8 @@ func TestRemoteHostValidationViaStruct(t *testing.T) {
 			CascadeFields: CascadeFields{Remote: rem},
 			Services:      []ServiceConfig{{Title: "svc", Command: CommandValue{"true"}}},
 		}}}
-		if err := validate.Struct(cfg); err != nil {
-			t.Errorf("remote %v: unexpected validation error: %v", rem, err)
+		if issues := Validate(&cfg); len(issues) > 0 {
+			t.Errorf("remote %v: unexpected validation error: %v", rem, issues)
 		}
 	}
 
@@ -98,7 +98,7 @@ func TestRemoteHostValidationViaStruct(t *testing.T) {
 			CascadeFields: CascadeFields{Remote: rem},
 			Services:      []ServiceConfig{{Title: "svc", Command: CommandValue{"true"}}},
 		}}}
-		if err := validate.Struct(cfg); err == nil {
+		if issues := Validate(&cfg); len(issues) == 0 {
 			t.Errorf("remote %v: expected validation error, got nil", rem)
 		}
 	}

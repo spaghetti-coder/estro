@@ -33,12 +33,12 @@ func TestAllowedRef(t *testing.T) {
 					Services: []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
 				}},
 			}
-			err := validate.Struct(cfg)
-			if tt.wantErr && err == nil {
+			issues := Validate(&cfg)
+			if tt.wantErr && len(issues) == 0 {
 				t.Errorf("expected error for allowed=%v, got nil", tt.allowed)
 			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("expected no error for allowed=%v, got %v", tt.allowed, err)
+			if !tt.wantErr && len(issues) > 0 {
+				t.Errorf("expected no error for allowed=%v, got %v", tt.allowed, issues)
 			}
 		})
 	}
@@ -249,7 +249,7 @@ func TestValueConstraints(t *testing.T) {
 
 	for _, tt := range rejected {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validate.Struct(tt.cfg); err == nil {
+			if issues := Validate(&tt.cfg); len(issues) == 0 {
 				t.Errorf("expected validation error for %q, got nil", tt.name)
 			}
 		})
@@ -261,8 +261,8 @@ func TestValueConstraints(t *testing.T) {
 			Users:    map[string]*UserConfig{"alice": {Password: "secret"}},
 			Sections: []SectionConfig{{Title: "S", Services: []ServiceConfig{{Title: "T", Command: CommandValue{"echo hello"}}}}},
 		}
-		if err := validate.Struct(cfg); err != nil {
-			t.Errorf("expected valid config to pass, got: %v", err)
+		if issues := Validate(&cfg); len(issues) > 0 {
+			t.Errorf("expected valid config to pass, got: %v", issues)
 		}
 	})
 }
@@ -301,7 +301,7 @@ func TestAllowedRefZeroMemberGroup(t *testing.T) {
 			Services: []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
 		}},
 	}
-	if err := validate.Struct(cfg); err == nil {
+	if issues := Validate(&cfg); len(issues) == 0 {
 		t.Fatal("expected error: 'editors' is neither a user nor a referenced group")
 	}
 }

@@ -87,7 +87,8 @@ func validateRemoteHost(fl validator.FieldLevel) bool {
 	if rh.User != "" && !isValidUnixUsername(rh.User) {
 		return false
 	}
-	if validate.Var(rh.Host, "hostname_rfc1123|ip") != nil {
+	v := validator.New()
+	if v.Var(rh.Host, "hostname_rfc1123|ip") != nil {
 		return false
 	}
 	if rh.Port != "" {
