@@ -33,8 +33,8 @@ func Authenticate(users map[string]*config.UserConfig, username, password string
 	}
 
 	stored := user.Password
-	if strings.HasPrefix(stored, "plain:") {
-		if strings.TrimPrefix(stored, "plain:") == password {
+	if plain, ok := strings.CutPrefix(stored, "plain:"); ok {
+		if plain == password {
 			return user
 		}
 		return nil
