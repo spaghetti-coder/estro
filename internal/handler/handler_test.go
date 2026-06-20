@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -375,33 +376,33 @@ func TestLogout(t *testing.T) {
 	}
 }
 
-func TestRunServiceReturnsJobId(t *testing.T) {
-	e, _, store := setupTestEnv(t)
-	cookie := loginAs(t, e, "alice", "changeme1", false)
-	jobID := createJob(t, e, cookie)
-
-	var j *job.Job
-	var ok bool
-	for i := 0; i < 20; i++ {
-		j, ok = store.Get(jobID)
-		if ok && (j.Status == job.StatusDone || j.Status == job.StatusRunning || j.Status == job.StatusError) {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if !ok {
-		t.Fatalf("job %s not found", jobID)
-	}
-}
-
 func TestGetJobRunning(t *testing.T) {
 	e, _, _ := setupTestEnv(t)
 	cookie := loginAs(t, e, "alice", "changeme1", false)
 	jobID := createJob(t, e, cookie)
 
-	rec := doRequest(e, http.MethodGet, "/jobs/"+jobID, cookie)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
+	var result map[string]any
+	var terminal bool
+	for range 50 {
+		rec := doRequest(e, http.MethodGet, "/jobs/"+jobID, cookie)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		decodeJSON(t, rec.Body.Bytes(), &result)
+		if result["status"] == job.StatusDone || result["status"] == job.StatusError {
+			terminal = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !terminal {
+		t.Fatalf("job %s never reached terminal status: %v", jobID, result["status"])
+	}
+	if result["status"] != job.StatusDone {
+		t.Fatalf("expected done, got %v: %v", result["status"], result["stderr"])
+	}
+	if stdout, _ := result["stdout"].(string); strings.TrimSpace(stdout) == "" {
+		t.Errorf("expected non-empty stdout for uptime, got %q", stdout)
 	}
 }
 
@@ -683,9 +684,11 @@ func TestListServicesRestrictedFalseVisibleButNotAccessible(t *testing.T) {
 }
 
 func TestRunServiceRestrictedHiddenReturns404(t *testing.T) {
-	e, _, _ := setupTestEnvWithConfig(t, buildRestrictedTestConfig())
+	cfg := buildRestrictedTestConfig()
+	e, _, _ := setupTestEnvWithConfig(t, cfg)
 	cookie := loginAs(t, e, "guest", "changeme3", false)
-	rec := doRequest(e, http.MethodPost, "/run/1", cookie)
+	restrictedIndex := findServiceIndex(t, cfg, "Admin tool")
+	rec := doRequest(e, http.MethodPost, "/run/"+strconv.Itoa(restrictedIndex), cookie)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -702,10 +705,11 @@ func TestExecuteAsyncStderr(t *testing.T) {
 		cmd        string
 		wantStatus string
 		wantStderr string
+		wantStdout string
 	}{
-		{"failure with stderr keeps the real stderr", "echo boom >&2; exit 1", job.StatusError, "boom"},
-		{"failure without stderr falls back to the error", "exit 3", job.StatusError, "exit status 3"},
-		{"success has empty stderr", "echo ok", job.StatusDone, ""},
+		{"failure with stderr keeps the real stderr", "echo boom >&2; exit 1", job.StatusError, "boom", ""},
+		{"failure without stderr falls back to the error", "exit 3", job.StatusError, "exit status 3", ""},
+		{"success has empty stderr", "echo ok", job.StatusDone, "", "ok"},
 	}
 
 	for _, tt := range tests {
@@ -724,6 +728,9 @@ func TestExecuteAsyncStderr(t *testing.T) {
 			if j.Stderr != tt.wantStderr {
 				t.Errorf("stderr = %q, want %q", j.Stderr, tt.wantStderr)
 			}
+			if tt.wantStdout != "" && j.Stdout != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", j.Stdout, tt.wantStdout)
+			}
 		})
 	}
 }
@@ -732,9 +739,10 @@ func TestSessionSliding(t *testing.T) {
 	tests := []struct {
 		name       string
 		sessionTTL int // 0 = unlimited
+		wantMaxAge int
 	}{
-		{"unlimited TTL slides cookie", 0},
-		{"explicit TTL slides cookie", 720},
+		{"unlimited TTL slides cookie", 0, math.MaxInt32},
+		{"explicit TTL slides cookie", 720, 2592000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -748,11 +756,24 @@ func TestSessionSliding(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d", rec.Code)
 			}
-			if !hasSessionCookie(rec) {
-				t.Fatal("expected refreshed session cookie from sliding middleware")
-			}
 
 			freshCookie := extractSessionCookie(rec)
+			if freshCookie == nil {
+				t.Fatal("expected refreshed session cookie from sliding middleware")
+			}
+			if freshCookie.MaxAge <= 0 {
+				t.Fatalf("expected persistent refreshed cookie, got MaxAge=%d", freshCookie.MaxAge)
+			}
+			if tt.sessionTTL == 0 {
+				if freshCookie.MaxAge != math.MaxInt32 {
+					t.Errorf("unlimited TTL: MaxAge=%d, want %d", freshCookie.MaxAge, math.MaxInt32)
+				}
+			} else {
+				if freshCookie.MaxAge >= math.MaxInt32 {
+					t.Errorf("finite TTL: MaxAge=%d, want < MaxInt32", freshCookie.MaxAge)
+				}
+			}
+
 			rec2 := doRequest(e, http.MethodGet, "/me", freshCookie)
 			var result map[string]any
 			decodeJSON(t, rec2.Body.Bytes(), &result)
