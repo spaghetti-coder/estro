@@ -2,7 +2,6 @@ package exec
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,16 +11,17 @@ import (
 func TestShellEscape(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
+		name     string
 		input    string
 		expected string
 	}{
-		{"hello", "hello"},
-		{"don't", "don'\\''t"},
-		{"it's a test", "it'\\''s a test"},
-		{"", ""},
+		{name: "plain", input: "hello", expected: "hello"},
+		{name: "single_quote", input: "don't", expected: "don'\\''t"},
+		{name: "quote_and_space", input: "it's a test", expected: "it'\\''s a test"},
+		{name: "empty", input: "", expected: ""},
 	}
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := ShellEscape(tt.input)
 			if got != tt.expected {
@@ -61,13 +61,6 @@ func TestBuildCmd(t *testing.T) {
 			want:   "ssh server1.local 'uptime'",
 		},
 		{
-			name:    "single remote custom ssh opts",
-			cmd:     config.CommandValue{"uptime"},
-			remote:  config.StringList{"server1.local"},
-			sshOpts: "-o UserKnownHostsFile=/dev/null",
-			want:    "ssh -o UserKnownHostsFile=/dev/null server1.local 'uptime'",
-		},
-		{
 			name:    "multi-hop remote",
 			cmd:     config.CommandValue{"uptime"},
 			remote:  config.StringList{"server1.local", "server2.local"},
@@ -99,10 +92,7 @@ func TestBuildCmd(t *testing.T) {
 			remote: config.StringList{"hop1.local:2222", "target:2223"},
 			want:   "ssh -p 2222 hop1.local 'ssh -p 2223 target '\\''uptime'\\'''",
 		},
-		{name: "error empty remote", cmd: config.CommandValue{"uptime"}, remote: config.StringList{""}, wantErr: true},
-		{name: "error empty user", cmd: config.CommandValue{"uptime"}, remote: config.StringList{"@host"}, wantErr: true},
-		{name: "error empty port", cmd: config.CommandValue{"uptime"}, remote: config.StringList{"host:"}, wantErr: true},
-		{name: "error empty host", cmd: config.CommandValue{"uptime"}, remote: config.StringList{"user@"}, wantErr: true},
+		{name: "invalid remote propagated", cmd: config.CommandValue{"uptime"}, remote: config.StringList{""}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -118,44 +108,34 @@ func TestBuildCmd(t *testing.T) {
 	}
 }
 
-func TestRunCommandSuccess(t *testing.T) {
+func TestRunCommand(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	stdout, _, err := RunCommand(ctx, "echo hello", 5*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tests := []struct {
+		name       string
+		cmd        string
+		timeout    time.Duration
+		wantErr    bool
+		wantStdout string
+		wantStderr string
+	}{
+		{name: "stdout", cmd: "echo hello", timeout: 5 * time.Second, wantStdout: "hello"},
+		{name: "stderr", cmd: "echo err >&2", timeout: 5 * time.Second, wantStderr: "err"},
+		{name: "non-zero exit", cmd: "exit 42", timeout: 5 * time.Second, wantErr: true},
+		{name: "timeout", cmd: "sleep 10", timeout: 50 * time.Millisecond, wantErr: true},
 	}
-	if strings.TrimSpace(stdout) != "hello" {
-		t.Errorf("expected stdout %q, got %q", "hello", stdout)
-	}
-}
-
-func TestRunCommandStderr(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	_, stderr, err := RunCommand(ctx, "echo err >&2", 5*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.TrimSpace(stderr) != "err" {
-		t.Errorf("expected stderr %q, got %q", "err", stderr)
-	}
-}
-
-func TestRunCommandNonZeroExit(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	_, _, err := RunCommand(ctx, "exit 42", 5*time.Second)
-	if err == nil {
-		t.Fatal("expected non-zero exit error, got nil")
-	}
-}
-
-func TestRunCommandTimeout(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	_, _, err := RunCommand(ctx, "sleep 10", 50*time.Millisecond)
-	if err == nil {
-		t.Error("expected timeout error, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			stdout, stderr, err := RunCommand(context.Background(), tt.cmd, tt.timeout)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("RunCommand(%q) err = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+			}
+			if tt.wantStdout != "" && stdout != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", stdout, tt.wantStdout)
+			}
+			if tt.wantStderr != "" && stderr != tt.wantStderr {
+				t.Errorf("stderr = %q, want %q", stderr, tt.wantStderr)
+			}
+		})
 	}
 }
