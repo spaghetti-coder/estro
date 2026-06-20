@@ -57,6 +57,13 @@ type healthzResponse struct {
 	Issues []string `json:"issues,omitempty"`
 }
 
+// loginRequest is /login JSON body.
+type loginRequest struct {
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"rememberMe"`
+}
+
 // errJSON writes a JSON error response.
 func errJSON(c *echo.Context, status int, msg string) error {
 	return c.JSON(status, map[string]string{"error": msg})
@@ -177,11 +184,7 @@ func (h *Handler) getMe(c *echo.Context) error {
 }
 
 func (h *Handler) login(c *echo.Context) error {
-	var body struct {
-		Username   string `json:"username"`
-		Password   string `json:"password"`
-		RememberMe bool   `json:"rememberMe"`
-	}
+	var body loginRequest
 	if err := c.Bind(&body); err != nil {
 		return errJSON(c, http.StatusBadRequest, "Invalid request")
 	}

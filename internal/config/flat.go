@@ -4,7 +4,6 @@ package config
 type FlatService struct {
 	Title   string
 	Command CommandValue
-
 	// resolved cascading fields
 	Timeout       int
 	Confirm       bool
@@ -13,12 +12,10 @@ type FlatService struct {
 	Allowed       []string   // nil = public
 	Remote        StringList // nil = inherit/cascade, [] = explicit local
 	RemoteSSHOpts StringList // nil = unset
-
 	// resolved layout
 	SectionCollapsable bool
 	SectionColumns     int
-
-	SectionTitle string
+	SectionTitle       string
 }
 
 // SerializedService is JSON-ready service for frontend.
