@@ -28,6 +28,31 @@ func TestIsAccessible(t *testing.T) {
 	}
 }
 
+func TestIsHidden(t *testing.T) {
+	tests := []struct {
+		name       string
+		restricted bool
+		allowed    []string
+		user       string
+		want       bool
+	}{
+		{"restricted, anonymous", true, []string{"alice"}, "", true},
+		{"restricted, allowed user", true, []string{"alice"}, "alice", false},
+		{"restricted, denied user", true, []string{"alice"}, "bob", true},
+		{"restricted, public", true, nil, "", false},
+		{"unrestricted, anonymous", false, []string{"alice"}, "", false},
+		{"unrestricted, public", false, nil, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flat := FlatService{Restricted: tt.restricted, Allowed: tt.allowed}
+			if got := flat.IsHidden(tt.user); got != tt.want {
+				t.Errorf("IsHidden(%q) = %v, want %v", tt.user, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveAllowed(t *testing.T) {
 	defaultUsers := map[string]*UserConfig{
 		"alice": {Password: "hash", Groups: []string{"admins"}},

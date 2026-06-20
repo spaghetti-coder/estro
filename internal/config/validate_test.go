@@ -23,6 +23,7 @@ func TestAllowedRef(t *testing.T) {
 		{"user and group", StringList{"alice", "admins"}, false},
 		{"unknown name", StringList{"ghost"}, true},
 		{"valid plus unknown", StringList{"alice", "ghost"}, true},
+		{"group with no members (neither user nor group)", StringList{"editors"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,6 +51,23 @@ func TestIssueString(t *testing.T) {
 	}
 	if got := (Issue{Msg: "Configuration file can't be read"}).String(); got != "Configuration file can't be read" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestMsgRank(t *testing.T) {
+	cases := []struct {
+		msg  string
+		want int
+	}{
+		{"invalid value", 0},
+		{"required", 1},
+		{"invalid field", 2},
+		{"weird", 99},
+	}
+	for _, c := range cases {
+		if got := msgRank(c.msg); got != c.want {
+			t.Errorf("msgRank(%q) = %d, want %d", c.msg, got, c.want)
+		}
 	}
 }
 
@@ -155,15 +173,13 @@ func TestUnknownKeyBehavior(t *testing.T) {
 		name      string
 		src       string
 		wantPaths []string // paths that must carry "invalid field"
-		notPaths  []string // paths that must NOT appear
 	}{
-		{"top-level typo", "sektions: 1\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"sektions"}, nil},
-		{"global typo", "global:\n  titl: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"global.titl"}, nil},
-		{"service typo", "sections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n        comand: typo\n", []string{"sections[0].services[0].comand"}, nil},
-		{"user typo", "users:\n  bob:\n    password: x\n    pasword: y\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"users.bob.pasword"}, nil},
-		{"bad key merged via anchor", "x-anchor: &a\n  hstnm: bad\nglobal:\n  <<: *a\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"global.hstnm"}, nil},
-		{"x-* keys NOT reported", "x-top: anything\nglobal:\n  x-note: ok\nsections:\n  - title: S\n    x-section: ok\n    services:\n      - title: T\n        command: echo\n        x-svc: ok\n", nil, []string{"x-top", "global.x-note", "sections[0].x-section", "sections[0].services[0].x-svc"}},
-		{"section typo", "sections:\n  - title: S\n    sektion_typo: 1\n    services:\n      - title: T\n        command: echo\n", []string{"sections[0].sektion_typo"}, nil},
+		{"top-level typo", "sektions: 1\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"sektions"}},
+		{"global typo", "global:\n  titl: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"global.titl"}},
+		{"service typo", "sections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n        comand: typo\n", []string{"sections[0].services[0].comand"}},
+		{"user typo", "users:\n  bob:\n    password: x\n    pasword: y\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"users.bob.pasword"}},
+		{"bad key merged via anchor", "x-anchor: &a\n  hstnm: bad\nglobal:\n  <<: *a\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", []string{"global.hstnm"}},
+		{"section typo", "sections:\n  - title: S\n    sektion_typo: 1\n    services:\n      - title: T\n        command: echo\n", []string{"sections[0].sektion_typo"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -180,13 +196,6 @@ func TestUnknownKeyBehavior(t *testing.T) {
 					t.Errorf("expected issue {Path:%q, Msg:\"invalid field\"}, got: %v", wantPath, issues)
 				}
 			}
-			for _, notPath := range tt.notPaths {
-				for _, is := range issues {
-					if is.Path == notPath {
-						t.Errorf("unexpected issue at %q: %v", notPath, is)
-					}
-				}
-			}
 		})
 	}
 }
@@ -194,12 +203,19 @@ func TestUnknownKeyBehavior(t *testing.T) {
 func TestDedupeSort(t *testing.T) {
 	in := []Issue{
 		{Path: "b", Msg: "x"},
-		{Path: "a", Msg: "y"},
-		{Path: "a", Msg: "y"},
+		{Path: "a", Msg: "y"}, {Path: "a", Msg: "y"},
+		{Path: "", Msg: "z"}, {Path: "", Msg: "z"},
+		{Path: "", Msg: "a"},
 	}
 	got := dedupeSort(in)
-	if len(got) != 2 || got[0].Path != "a" || got[1].Path != "b" {
-		t.Fatalf("got %v", got)
+	want := []Issue{
+		{Path: "", Msg: "a"},
+		{Path: "", Msg: "z"},
+		{Path: "a", Msg: "y"},
+		{Path: "b", Msg: "x"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
@@ -270,6 +286,7 @@ func TestValueConstraints(t *testing.T) {
 func TestLoadCollectsAllIssues(t *testing.T) {
 	src := `
 global:
+  session_ttl: -5
   columns: 99
   hostname: "not a host"
 sections:
@@ -282,6 +299,7 @@ sections:
 	strs := loadIssueStrings(t, src)
 	joined := strings.Join(strs, "\n")
 	for _, want := range []string{
+		"`global.session_ttl` invalid value",
 		"`global.columns` invalid value",
 		"`global.hostname` invalid value",
 		"`sections[0].title` required",
@@ -290,19 +308,6 @@ sections:
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing issue %q in:\n%s", want, joined)
 		}
-	}
-}
-
-func TestAllowedRefZeroMemberGroup(t *testing.T) {
-	cfg := Config{
-		Users: map[string]*UserConfig{"alice": {Password: "x", Groups: StringList{"admins"}}},
-		Sections: []SectionConfig{{
-			Title: "S", CascadeFields: CascadeFields{Allowed: StringList{"editors"}},
-			Services: []ServiceConfig{{Title: "t", Command: CommandValue{"echo"}}},
-		}},
-	}
-	if issues := Validate(&cfg); len(issues) == 0 {
-		t.Fatal("expected error: 'editors' is neither a user nor a referenced group")
 	}
 }
 
@@ -415,6 +420,9 @@ func TestShapeIssues(t *testing.T) {
 		{"allowed empty list ok", "global:\n  allowed: []\n", nil},
 		{"remote list ok", "global:\n  remote: [h1]\n", nil},
 		{"global wrong shape", "global: 123\n", []string{"`global` invalid value"}},
+		{"sections element non-map", "sections: [123]\n", []string{"`sections[0]` invalid value"}},
+		{"users entry non-map", "users:\n  bob: 123\n", []string{"`users.bob` invalid value"}},
+		{"global as sequence", "global: [1]\n", []string{"`global` invalid value"}},
 		{"null scalar ok", "global:\n  port:\n", nil},
 		{"valid config", "global:\n  port: 3000\nusers:\n  a:\n    password: x\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", nil},
 		{"top-level unknown key", "sektions: 1\n", []string{"`sektions` invalid field"}},

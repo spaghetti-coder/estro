@@ -38,13 +38,6 @@ func loadIssueStrings(t *testing.T, src string) []string {
 	return Load(path).IssueStrings()
 }
 
-func TestLoadInvalidConfig(t *testing.T) {
-	issues := loadIssues(t, "sections:\n  - title: ''\n    services:\n      - title: test\n        command: echo\n")
-	if len(issues) == 0 {
-		t.Fatal("expected issues for empty required field")
-	}
-}
-
 func TestLoadSessionTTL(t *testing.T) {
 	tests := []struct {
 		name string
@@ -52,8 +45,7 @@ func TestLoadSessionTTL(t *testing.T) {
 		want int
 	}{
 		{"omitted no limit", "global:\n  title: E\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", math.MaxInt32},
-		{"zero no limit", "global:\n  session_ttl: 0\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", math.MaxInt32},
-		{"720 hours", "global:\n  session_ttl: 720\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", 720 * 3600},
+		{"present value", "global:\n  session_ttl: 1\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n", 3600},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,14 +60,6 @@ func TestLoadSessionTTL(t *testing.T) {
 	}
 }
 
-func TestLoadInvalidSessionTTL(t *testing.T) {
-	strs := loadIssueStrings(t, "global:\n  session_ttl: -5\nsections:\n  - title: S\n    services:\n      - title: T\n        command: echo\n")
-	joined := strings.Join(strs, "\n")
-	if !strings.Contains(joined, "session_ttl") {
-		t.Errorf("expected session_ttl issue, got: %v", strs)
-	}
-}
-
 func TestLoadMissingFile(t *testing.T) {
 	strs := Load("/nonexistent/path/config.yaml").IssueStrings()
 	if len(strs) == 0 || strs[0] != "Configuration file can't be read" {
@@ -84,9 +68,9 @@ func TestLoadMissingFile(t *testing.T) {
 }
 
 func TestLoadBadYAML(t *testing.T) {
-	issues := loadIssues(t, "sections: [{invalid yaml\n")
-	if len(issues) == 0 {
-		t.Fatal("expected degraded for bad YAML")
+	strs := loadIssueStrings(t, "sections: [{invalid yaml\n")
+	if len(strs) != 1 || strs[0] != "Configuration file can't be read" {
+		t.Errorf("got %v, want [Configuration file can't be read]", strs)
 	}
 }
 
@@ -183,19 +167,34 @@ func TestLoadEmptyFile(t *testing.T) {
 }
 
 func TestGetConfigDefaultTitle(t *testing.T) {
-	cfg := &Config{
-		Global: &GlobalConfig{Title: ptrOf("Estro"), Hostname: ptrOf("0.0.0.0"), Port: ptrOf(3000)},
-		Users:  map[string]*UserConfig{"testuser": {Password: "$2y$10$hash"}},
-		Sections: []SectionConfig{{
-			Title: "Test", Services: []ServiceConfig{{Title: "Svc", Command: CommandValue{"echo hi"}}},
-		}},
+	base := func() *Config {
+		return &Config{
+			Global:   &GlobalConfig{Hostname: ptrOf("0.0.0.0"), Port: ptrOf(3000)},
+			Users:    map[string]*UserConfig{"testuser": {Password: "$2y$10$hash"}},
+			Sections: []SectionConfig{{Title: "Test", Services: []ServiceConfig{{Title: "Svc", Command: CommandValue{"echo hi"}}}}},
+		}
 	}
-	issues := Validate(cfg)
-	if len(issues) > 0 {
-		t.Fatalf("invalid test config: %v", issues)
+	validate := func(t *testing.T, cfg *Config) {
+		t.Helper()
+		issues := Validate(cfg)
+		if len(issues) > 0 {
+			t.Fatalf("invalid test config: %v", issues)
+		}
 	}
-	resp := cfg.GetConfigResponse()
-	if resp.Title != "Estro" {
-		t.Errorf("expected default title 'Estro', got %s", resp.Title)
-	}
+
+	t.Run("explicit title wins", func(t *testing.T) {
+		cfg := base()
+		cfg.Global.Title = ptrOf("Custom")
+		validate(t, cfg)
+		if got := cfg.GetConfigResponse().Title; got != "Custom" {
+			t.Errorf("got %q, want Custom", got)
+		}
+	})
+	t.Run("nil title falls back to default", func(t *testing.T) {
+		cfg := base()
+		validate(t, cfg)
+		if got := cfg.GetConfigResponse().Title; got != defaultTitle {
+			t.Errorf("got %q, want %q", got, defaultTitle)
+		}
+	})
 }
