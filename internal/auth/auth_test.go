@@ -150,7 +150,7 @@ func TestAuthenticatePasswordFormats(t *testing.T) {
 			users := map[string]*config.UserConfig{"u": {Password: tt.stored}}
 			got := Authenticate(users, "u", tt.plain)
 			if (got != nil) != tt.want {
-				t.Errorf("Authenticate(..., u, %q) = %v, want non-nil %v", tt.plain, got, tt.want)
+				t.Errorf("Authenticate(..., u, %q) = %v, want non-nil=%v", tt.plain, got, tt.want)
 			}
 		})
 	}
