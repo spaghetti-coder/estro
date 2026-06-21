@@ -1,0 +1,5 @@
+sections:
+  - title: Test
+    services:
+      - title: Echo
+        command: [echo, hello]

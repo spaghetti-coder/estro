@@ -122,6 +122,15 @@ func GenerateSessionSecret() ([]byte, error) {
 	return b, nil
 }
 
+// SecretFromConfig returns the configured session secret, or generates a new
+// random one when global.SessionSecret is nil.
+func SecretFromConfig(global *config.GlobalConfig) ([]byte, error) {
+	if global != nil && global.SessionSecret != nil {
+		return []byte(*global.SessionSecret), nil
+	}
+	return GenerateSessionSecret()
+}
+
 // NewSessionStore returns a cookie store signed with secret.
 func NewSessionStore(secret []byte) sessions.Store {
 	return sessions.NewCookieStore(secret)
