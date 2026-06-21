@@ -373,6 +373,49 @@ func TestGenerateSessionSecret(t *testing.T) {
 	}
 }
 
+func TestSecretFromConfig(t *testing.T) {
+	configured := "configured-secret"
+
+	tests := []struct {
+		name          string
+		global        *config.GlobalConfig
+		wantLen       int
+		wantExact     *string
+		wantDifferent bool
+	}{
+		{name: "configured", global: &config.GlobalConfig{SessionSecret: &configured}, wantExact: &configured},
+		{name: "nil", global: nil, wantLen: 32, wantDifferent: true},
+		{name: "nil secret", global: &config.GlobalConfig{}, wantLen: 32, wantDifferent: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := SecretFromConfig(tt.global)
+			if err != nil {
+				t.Fatalf("SecretFromConfig: %v", err)
+			}
+			if tt.wantExact != nil {
+				if string(got) != *tt.wantExact {
+					t.Errorf("secret = %q, want %q", got, *tt.wantExact)
+				}
+				return
+			}
+			if len(got) != tt.wantLen {
+				t.Errorf("secret length = %d, want %d", len(got), tt.wantLen)
+			}
+			if tt.wantDifferent {
+				got2, err := SecretFromConfig(tt.global)
+				if err != nil {
+					t.Fatalf("second SecretFromConfig: %v", err)
+				}
+				if bytes.Equal(got, got2) {
+					t.Error("two generated secrets are identical")
+				}
+			}
+		})
+	}
+}
+
 func TestDestroySession(t *testing.T) {
 	store := NewSessionStore([]byte("test-secret-destroy"))
 	req := setSession(t, store, "alice", false, 0)
