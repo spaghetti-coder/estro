@@ -65,9 +65,11 @@ func TestMsgRank(t *testing.T) {
 		{"weird", 99},
 	}
 	for _, c := range cases {
-		if got := msgRank(c.msg); got != c.want {
-			t.Errorf("msgRank(%q) = %d, want %d", c.msg, got, c.want)
-		}
+		t.Run(c.msg, func(t *testing.T) {
+			if got := msgRank(c.msg); got != c.want {
+				t.Errorf("msgRank(%q) = %d, want %d", c.msg, got, c.want)
+			}
+		})
 	}
 }
 
@@ -80,9 +82,11 @@ func TestFormatPath(t *testing.T) {
 		"Config.sections[0].services[1].CascadeFields.remote[0]": "sections[0].services[1].remote[0]",
 	}
 	for in, want := range cases {
-		if got := formatPath(in); got != want {
-			t.Errorf("formatPath(%q) = %q, want %q", in, got, want)
-		}
+		t.Run(in, func(t *testing.T) {
+			if got := formatPath(in); got != want {
+				t.Errorf("formatPath(%q) = %q, want %q", in, got, want)
+			}
+		})
 	}
 }
 
