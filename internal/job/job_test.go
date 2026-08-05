@@ -47,75 +47,74 @@ func TestStoreSetGet(t *testing.T) {
 }
 
 func TestStoreDelete(t *testing.T) {
-	s := NewStore()
-	s.Set("id1", &Job{Status: StatusDone, Title: "test"})
-	s.Delete("id1")
-	if _, ok := s.Get("id1"); ok {
-		t.Error("expected job to be deleted")
+	tests := []struct {
+		name   string
+		setID  string
+		delID  string
+		wantOK bool
+	}{
+		{name: "existing job", setID: "id1", delID: "id1", wantOK: false},
+		{name: "nonexistent job", setID: "", delID: "ghost", wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewStore()
+			if tt.setID != "" {
+				s.Set(tt.setID, &Job{Status: StatusDone, Title: "test"})
+			}
+			s.Delete(tt.delID)
+			if _, ok := s.Get(tt.delID); ok != tt.wantOK {
+				t.Errorf("Get after delete: ok = %v, want %v", ok, tt.wantOK)
+			}
+		})
 	}
 }
 
 func TestStoreScheduleCleanup(t *testing.T) {
-	tests := []struct {
-		name  string
-		id    string
-		setup func(*Store)
-	}{
-		{name: "existing job", id: "id1",
-			setup: func(s *Store) {
-				s.Set("id1", &Job{Status: StatusDone, Title: "test"})
-			},
-		},
-		{name: "nonexistent job", id: "ghost", setup: func(*Store) {}},
-	}
+	s := NewStore()
+	s.Set("id1", &Job{Status: StatusDone, Title: "test"})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := NewStore()
-			tt.setup(s)
-			s.ScheduleCleanup(tt.id, 1*time.Millisecond)
-			time.Sleep(10 * time.Millisecond)
-			if _, ok := s.Get(tt.id); ok {
-				t.Error("expected job to be cleaned up after TTL")
-			}
-		})
+	s.ScheduleCleanup("id1", 1*time.Millisecond)
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, ok := s.Get("id1"); !ok {
+			return // cleaned up
+		}
+		time.Sleep(time.Millisecond)
 	}
+	t.Error("expected job to be cleaned up after TTL")
 }
 
 func TestStoreMarkAllRunningAsError(t *testing.T) {
-	tests := []struct {
-		name       string
+	s := NewStore()
+	s.Set("r1", &Job{Status: StatusRunning, Title: "running 1"})
+	s.Set("r2", &Job{Status: StatusRunning, Title: "running 2", Stderr: "stale"})
+	s.Set("d1", &Job{Status: StatusDone, Title: "done", Stderr: "kept"})
+	s.Set("e1", &Job{Status: StatusError, Title: "error", Stderr: "kept"})
+
+	s.MarkAllRunningAsError("server shutting down")
+
+	cases := []struct {
 		id         string
 		wantStatus string
 		wantStderr string
-		setup      func(*Store)
 	}{
-		{name: "running job becomes error", id: "r1", wantStatus: StatusError, wantStderr: "server shutting down",
-			setup: func(s *Store) {
-				s.Set("r1", &Job{Status: StatusRunning, Title: "running job"})
-			},
-		},
-		{name: "done job stays done with existing stderr", id: "d1", wantStatus: StatusDone, wantStderr: "original error",
-			setup: func(s *Store) {
-				s.Set("d1", &Job{Status: StatusDone, Title: "done job", Stderr: "original error"})
-			},
-		},
+		{"r1", StatusError, "server shutting down"},
+		{"r2", StatusError, "server shutting down"},
+		{"d1", StatusDone, "kept"},
+		{"e1", StatusError, "kept"},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := NewStore()
-			tt.setup(s)
-			s.MarkAllRunningAsError("server shutting down")
-
-			got, _ := s.Get(tt.id)
-			if got.Status != tt.wantStatus {
-				t.Errorf("expected status %q, got %q", tt.wantStatus, got.Status)
-			}
-			if got.Stderr != tt.wantStderr {
-				t.Errorf("expected stderr %q, got %q", tt.wantStderr, got.Stderr)
-			}
-		})
+	for _, c := range cases {
+		got, ok := s.Get(c.id)
+		if !ok {
+			t.Fatalf("%s: job missing", c.id)
+		}
+		if got.Status != c.wantStatus {
+			t.Errorf("%s: status = %q, want %q", c.id, got.Status, c.wantStatus)
+		}
+		if got.Stderr != c.wantStderr {
+			t.Errorf("%s: stderr = %q, want %q", c.id, got.Stderr, c.wantStderr)
+		}
 	}
 }
 

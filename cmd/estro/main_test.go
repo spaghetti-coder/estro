@@ -1,9 +1,11 @@
 package main
 
 import (
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -14,8 +16,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	auth.SetBcryptCost(bcrypt.MinCost)
+	os.Exit(m.Run())
 }
 
 func setupStaticTestServer(t *testing.T) *echo.Echo {
@@ -41,8 +44,6 @@ func TestStaticFileServing(t *testing.T) {
 		route      string
 		wantCT     string
 		wantNoCORS bool
-		wantCORS   bool
-		wantCORP   string
 		wantHTML   bool
 	}{
 		{name: "ui.js returns javascript", route: "/ui.js", wantCT: "javascript", wantNoCORS: true},
@@ -78,7 +79,7 @@ func TestStaticFileServing(t *testing.T) {
 	}
 }
 
-func TestStaticFaviconSVGWithCORS(t *testing.T) {
+func TestStaticFaviconSVGReachable(t *testing.T) {
 	e := setupStaticTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
@@ -87,14 +88,6 @@ func TestStaticFaviconSVGWithCORS(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	acao := rec.Header().Get("Access-Control-Allow-Origin")
-	if acao != "*" {
-		t.Errorf("expected Access-Control-Allow-Origin '*', got %q", acao)
-	}
-	corp := rec.Header().Get("Cross-Origin-Resource-Policy")
-	if corp != "cross-origin" {
-		t.Errorf("expected Cross-Origin-Resource-Policy 'cross-origin', got %q", corp)
 	}
 	ct := rec.Header().Get("Content-Type")
 	if !strings.Contains(ct, "svg") && !strings.Contains(ct, "xml") && !strings.Contains(ct, "image/") {
@@ -117,16 +110,43 @@ func TestEmbeddedFilesExist(t *testing.T) {
 
 func TestRunHash(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		wantExit int
+		name       string
+		args       []string
+		wantExit   int
+		verifyPass string // non-empty: capture stdout and validate it as a bcrypt hash
 	}{
-		{name: "single password", args: []string{"testpass"}, wantExit: 0},
+		{name: "single password", args: []string{"testpass"}, wantExit: 0, verifyPass: "testpass"},
 		{name: "too many args", args: []string{"a", "b"}, wantExit: 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.verifyPass != "" {
+				r, w, err := os.Pipe()
+				if err != nil {
+					t.Fatalf("os.Pipe: %v", err)
+				}
+				old := os.Stdout
+				os.Stdout = w
+
+				exitCode := runHash(tt.args)
+
+				os.Stdout = old
+				if err := w.Close(); err != nil {
+					t.Fatalf("close pipe writer: %v", err)
+				}
+				b, _ := io.ReadAll(r)
+				out := strings.TrimSpace(string(b))
+
+				if exitCode != tt.wantExit {
+					t.Fatalf("expected exit code %d, got %d", tt.wantExit, exitCode)
+				}
+				if err := bcrypt.CompareHashAndPassword([]byte(out), []byte(tt.verifyPass)); err != nil {
+					t.Fatalf("stdout %q is not a valid bcrypt hash for %q: %v", out, tt.verifyPass, err)
+				}
+				return
+			}
+
 			exitCode := runHash(tt.args)
 			if exitCode != tt.wantExit {
 				t.Fatalf("expected exit code %d, got %d", tt.wantExit, exitCode)

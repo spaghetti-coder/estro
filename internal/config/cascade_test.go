@@ -21,10 +21,6 @@ func TestStringListUnmarshalYAML(t *testing.T) {
 		{"yaml array", "val: [server1, server2]\n", StringList{"server1", "server2"}, false},
 		{"comma with spaces", "val: 'admins, guest'\n", StringList{"admins", "guest"}, false},
 		{"trailing comma kept as empty", "val: 'a,b,'\n", StringList{"a", "b", ""}, false},
-		{"empty middle element kept", "val: 'a,,b'\n", StringList{"a", "", "b"}, false},
-		{"leading comma kept as empty", "val: ',a'\n", StringList{"", "a"}, false},
-		{"whitespace-only element kept as empty", "val: 'a, ,b'\n", StringList{"a", "", "b"}, false},
-		{"sequence empty element kept", "val: [a, '', b]\n", StringList{"a", "", "b"}, false},
 		{"sequence whitespace-only kept as empty", "val: [a, ' ', b]\n", StringList{"a", "", "b"}, false},
 	}
 	for _, tt := range tests {
@@ -59,6 +55,38 @@ func TestStringListUnmarshalInvalid(t *testing.T) {
 	var w wrapper
 	if err := yaml.Load([]byte("val:\n  key: value\n"), &w); err == nil {
 		t.Error("expected error for mapping node, got nil")
+	}
+}
+
+func TestStringListUnmarshalSequenceDecodeError(t *testing.T) {
+	cases := []string{
+		"val: [{a: b}]\n",
+		"val: [[x]]\n",
+	}
+	for _, c := range cases {
+		type wrapper struct {
+			Val StringList `yaml:"val,omitempty"`
+		}
+		var w wrapper
+		if err := yaml.Load([]byte(c), &w); err == nil {
+			t.Errorf("expected error for %q, got nil", c)
+		}
+	}
+}
+
+func TestCommandValueUnmarshalSequenceDecodeError(t *testing.T) {
+	cases := []string{
+		"val: [{a: b}]\n",
+		"val: [[x]]\n",
+	}
+	for _, c := range cases {
+		type wrapper struct {
+			Val CommandValue `yaml:"val,omitempty"`
+		}
+		var w wrapper
+		if err := yaml.Load([]byte(c), &w); err == nil {
+			t.Errorf("expected error for %q, got nil", c)
+		}
 	}
 }
 

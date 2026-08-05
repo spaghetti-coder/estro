@@ -37,19 +37,26 @@ func TestSecurityMiddleware(t *testing.T) {
 	rec := doGet(newEcho(SecurityMiddleware(csp)), "/test")
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if got := rec.Header().Get("Content-Security-Policy"); got != csp {
-		t.Errorf("Content-Security-Policy = %q, want %q", got, csp)
+
+	tests := []struct {
+		name      string
+		header    string
+		wantValue string
+	}{
+		{name: "Content-Security-Policy", header: "Content-Security-Policy", wantValue: csp},
+		{name: "X-Frame-Options", header: "X-Frame-Options", wantValue: "DENY"},
+		{name: "X-Content-Type-Options", header: "X-Content-Type-Options", wantValue: "nosniff"},
+		{name: "Referrer-Policy", header: "Referrer-Policy", wantValue: "strict-origin-when-cross-origin"},
 	}
-	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
-		t.Errorf("X-Frame-Options = %q, want %q", got, "DENY")
-	}
-	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Errorf("X-Content-Type-Options = %q, want %q", got, "nosniff")
-	}
-	if got := rec.Header().Get("Referrer-Policy"); got != "strict-origin-when-cross-origin" {
-		t.Errorf("Referrer-Policy = %q, want %q", got, "strict-origin-when-cross-origin")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rec.Header().Get(tt.header); got != tt.wantValue {
+				t.Errorf("%s = %q, want %q", tt.header, got, tt.wantValue)
+			}
+		})
 	}
 }
 
@@ -62,8 +69,8 @@ func TestFaviconCORS(t *testing.T) {
 		wantACAO string
 		wantCORP string
 	}{
-		{name: "favicon_sets_cors", path: "/favicon.svg", wantACAO: "*", wantCORP: "cross-origin"},
-		{name: "other_skips_cors", path: "/other", wantACAO: "", wantCORP: ""},
+		{name: "favicon sets cors", path: "/favicon.svg", wantACAO: "*", wantCORP: "cross-origin"},
+		{name: "other skips cors", path: "/other", wantACAO: "", wantCORP: ""},
 	}
 
 	for _, tt := range tests {

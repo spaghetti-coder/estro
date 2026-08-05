@@ -3,6 +3,8 @@ package config
 import (
 	"slices"
 	"testing"
+
+	"go.yaml.in/yaml/v4"
 )
 
 // buildTestConfig constructs the test Config programmatically.
@@ -151,18 +153,40 @@ func TestSerializeRestrictedAndEnabled(t *testing.T) {
 	}
 }
 
-func TestCommandValueString(t *testing.T) {
-	cfg := buildTestConfig()
-	services := cfg.Flatten()
-
-	svc := findService(t, services, "Uptime")
-	if len(svc.Command) != 1 || svc.Command[0] != "uptime" {
-		t.Errorf("Uptime: expected single command 'uptime', got %v", svc.Command)
+func TestCommandValueUnmarshalYAML(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want CommandValue
+	}{
+		{"scalar", "val: echo hi\n", CommandValue{"echo hi"}},
+		{"sequence", "val: [a, b]\n", CommandValue{"a", "b"}},
+		{"block sequence", "val:\n  - a\n  - b\n", CommandValue{"a", "b"}},
+		{"empty scalar", "val: ''\n", CommandValue{""}},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			type wrapper struct {
+				Val CommandValue `yaml:"val,omitempty"`
+			}
+			var w wrapper
+			if err := yaml.Load([]byte(tt.yaml), &w); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(w.Val, tt.want) {
+				t.Errorf("got %v, want %v", w.Val, tt.want)
+			}
+		})
+	}
+}
 
-	svc = findService(t, services, "Disk usage")
-	if len(svc.Command) != 3 {
-		t.Errorf("Disk usage: expected 3 commands, got %d", len(svc.Command))
+func TestCommandValueUnmarshalInvalid(t *testing.T) {
+	type wrapper struct {
+		Val CommandValue `yaml:"val,omitempty"`
+	}
+	var w wrapper
+	if err := yaml.Load([]byte("val:\n  key: value\n"), &w); err == nil {
+		t.Error("expected error for mapping node, got nil")
 	}
 }
 
@@ -375,31 +399,7 @@ func TestRemoteChain(t *testing.T) {
 	}
 }
 
-func TestFlattenRemoteSSHOptsSingleHost(t *testing.T) {
-	cfg := &Config{
-		Global: &GlobalConfig{CascadeFields: CascadeFields{Remote: StringList{"server1.local"}, RemoteSSHOpts: StringList{"-o", "StrictHostKeyChecking=no"}}},
-		Users:  map[string]*UserConfig{"admin": {Password: "$2y$10$hash"}},
-		Sections: []SectionConfig{{
-			Title: "Single hop",
-			Services: []ServiceConfig{
-				{Title: "Single host with opts", Command: CommandValue{"uptime"}},
-			},
-		}},
-	}
-	services := cfg.Flatten()
-	if len(services) != 1 {
-		t.Fatalf("expected 1 service, got %d", len(services))
-	}
-	svc := services[0]
-	if !slices.Equal(svc.Remote, StringList{"server1.local"}) {
-		t.Errorf("remote: expected [server1.local], got %v", svc.Remote)
-	}
-	if !slices.Equal(svc.RemoteSSHOpts, StringList{"-o", "StrictHostKeyChecking=no"}) {
-		t.Errorf("ssh opts: expected [-o StrictHostKeyChecking=no], got %v", svc.RemoteSSHOpts)
-	}
-}
-
-func TestFlattenRemoteSSHOptsMultiHop(t *testing.T) {
+func TestFlattenRemoteSSHOpts(t *testing.T) {
 	cfg := &Config{
 		Global: &GlobalConfig{CascadeFields: CascadeFields{Remote: StringList{"hop1", "hop2", "target"}, RemoteSSHOpts: StringList{"-o", "ForwardAgent=no", "-o", "Compression=yes"}}},
 		Users:  map[string]*UserConfig{"admin": {Password: "$2y$10$hash"}},
@@ -422,8 +422,9 @@ func TestFlattenRemoteSSHOptsMultiHop(t *testing.T) {
 	if !slices.Equal(svc.Remote, wantRemote) {
 		t.Errorf("remote: expected %v, got %v", wantRemote, svc.Remote)
 	}
-	if len(svc.RemoteSSHOpts) != 4 {
-		t.Errorf("expected 4 ssh opts, got %d: %v", len(svc.RemoteSSHOpts), svc.RemoteSSHOpts)
+	wantOpts := []string{"-o", "ForwardAgent=no", "-o", "Compression=yes"}
+	if !slices.Equal(svc.RemoteSSHOpts, wantOpts) {
+		t.Errorf("ssh opts: expected %v, got %v", wantOpts, svc.RemoteSSHOpts)
 	}
 }
 
