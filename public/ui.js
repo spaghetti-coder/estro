@@ -1,7 +1,7 @@
 (() => {
   const STORAGE = {
     theme:        'ui:theme',
-    section:     (title) => 'section:' + title,
+    section:     (title) => `section:${title}`,
     fab:          'fab:pos',
     showDisabled: 'ui:show-disabled',
   };
@@ -76,7 +76,8 @@
     el.addEventListener('pointerup', (e) => {
       if (swipeStartX === null || e.pointerId !== swipePointerId) return;
       const dx = e.clientX - swipeStartX;
-      swipeStartX = swipePointerId = null;
+      swipePointerId = null;
+      swipeStartX = null;
       if (Math.abs(dx) > 60) { el.remove(); return; }
       el.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
       el.style.transform = 'translateY(0)';
@@ -85,7 +86,8 @@
     });
     el.addEventListener('pointercancel', (e) => {
       if (e.pointerId !== swipePointerId) return;
-      swipeStartX = swipePointerId = null;
+      swipePointerId = null;
+      swipeStartX = null;
       el.style.transform = 'translateY(0)';
       el.style.opacity = '1';
     });
@@ -97,7 +99,7 @@
     t.querySelector('.toast-icon').textContent = TOAST_ICONS[type] || TOAST_ICONS.info;
     const msgEl = t.querySelector('.toast-message');
     if (html) { msgEl.innerHTML = message; } else {
-      const truncated = message.length > TOAST_MAX_CHARS ? message.slice(0, TOAST_MAX_CHARS) + '…' : message;
+      const truncated = message.length > TOAST_MAX_CHARS ? `${message.slice(0, TOAST_MAX_CHARS)}…` : message;
       msgEl.textContent = truncated;
     }
     const logsBtn = t.querySelector('.toast-logs-btn');
@@ -159,7 +161,7 @@
   // --- Auth area ---
 
   function renderAuthArea() {
-    gearBtn.classList.toggle('logged-in', !!currentUser);
+    gearBtn.classList.toggle('logged-in', Boolean(currentUser));
     authAreaEl.innerHTML = '';
     if (currentUser) {
       const label = makeEl('span', { className: 'gear-label auth-username', textContent: currentUser.username });
@@ -372,7 +374,7 @@
         btn.disabled = true;
       } else {
         btn.classList.add('needs-login');
-        btn.textContent = '🔒 ' + title + (confirm ? '' : ' ⚡');
+        btn.textContent = `🔒 ${title}${confirm ? '' : ' ⚡'}`;
         btn.addEventListener('click', (e) => { createRipple(e, btn); openLoginModal(allowedUsers); });
       }
     }
@@ -508,14 +510,17 @@
       const vw = document.documentElement.clientWidth;
       const cr = containerEl?.getBoundingClientRect() ?? { left: 0, right: vw };
       topPct = Math.max((fabH / 2 / window.innerHeight) * 100, Math.min(((window.innerHeight - fabH / 2) / window.innerHeight) * 100, topPct));
-      fab.style.top = topPct + '%';
+      fab.style.top = `${topPct}%`;
       fab.style.transform = 'translateY(-50%)';
       fab.style.removeProperty('right');
       const gap = 8;
-      const leftPos = side === 'left'
-        ? (cr.left >= fabW + gap ? cr.left - fabW - gap : 0)
-        : (vw - cr.right >= fabW + gap ? cr.right + gap : vw - fabW);
-      fab.style.left = leftPos + 'px';
+      let leftPos;
+      if (side === 'left') {
+        leftPos = cr.left >= fabW + gap ? cr.left - fabW - gap : 0;
+      } else {
+        leftPos = vw - cr.right >= fabW + gap ? cr.right + gap : vw - fabW;
+      }
+      fab.style.left = `${leftPos}px`;
     }
     requestAnimationFrame(() => {
       fabW = fab.offsetWidth || 44;
@@ -559,12 +564,12 @@
 
       const newTopPx = Math.max(fabH / 2, Math.min(window.innerHeight - fabH / 2, startTopPx + dy));
       topPct = (newTopPx / window.innerHeight) * 100;
-      fab.style.top = topPct + '%';
+      fab.style.top = `${topPct}%`;
       const vw = document.documentElement.clientWidth;
       const newSide = e.clientX < vw / 2 ? 'left' : 'right';
       if (Math.abs(dx) > 30) {
         // horizontal intent — follow cursor and animate to side
-        fab.style.left = Math.max(0, Math.min(vw - fabW, e.clientX - fabW / 2)) + 'px';
+        fab.style.left = `${Math.max(0, Math.min(vw - fabW, e.clientX - fabW / 2))}px`;
         if (newSide !== side) {
           side = newSide;
           animateFabToPos();
@@ -664,6 +669,79 @@
 
   // --- Init ---
 
+  function setupGearEvents() {
+    gearBtn.addEventListener('click', () => {
+      const open = !gearPanel.hidden;
+      gearPanel.hidden = open;
+      gearBtn.setAttribute('aria-expanded', String(!open));
+    });
+    document.addEventListener('click', (e) => {
+      if (!gearPanel.hidden && !gearBtn.contains(e.target) && !gearPanel.contains(e.target)) {
+        gearPanel.hidden = true;
+        gearBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  function setupPasswordToggle() {
+    document.getElementById('togglePassword')?.addEventListener('click', () => {
+      const isPassword = loginPasswordEl.type === 'password';
+      loginPasswordEl.type = isPassword ? 'text' : 'password';
+      const icon = document.getElementById('eyeIcon');
+      if (icon) icon.innerHTML = isPassword
+        ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>'
+        : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    });
+  }
+
+  function setupTheme() {
+    const saved = localStorage.getItem(STORAGE.theme);
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    setTheme(saved || (prefersDark ? 'dark' : 'light'), false);
+    checkbox?.addEventListener('change', () => setTheme(checkbox.checked ? 'dark' : 'light'));
+  }
+
+  function setupDisabledToggle() {
+    const showDisabled = localStorage.getItem(STORAGE.showDisabled) === 'true';
+    if (disabledToggle) disabledToggle.checked = showDisabled;
+    disabledToggle?.addEventListener('change', () => {
+      localStorage.setItem(STORAGE.showDisabled, String(disabledToggle.checked));
+      loadServices();
+    });
+  }
+
+  function setupConfirmModal() {
+    document.getElementById('modalCancel')?.addEventListener('click', () => closeModal(false));
+    document.getElementById('modalConfirm')?.addEventListener('click', () => closeModal(true));
+    setupModalEvents(modal, () => closeModal(false));
+  }
+
+  function setupLoginModal() {
+    document.getElementById('loginModalClose')?.addEventListener('click', closeLoginModal);
+    setupModalEvents(loginModal, closeLoginModal);
+  }
+
+  function setupLogsModal() {
+    logsTabBtns.forEach(btn => btn.addEventListener('click', () => activateLogsTab(btn.dataset.tab)));
+    document.getElementById('logsCopyBtn')?.addEventListener('click', copyLogs);
+    document.getElementById('logsModalClose')?.addEventListener('click', () => closeModalEl(logsModalEl));
+    setupModalEvents(logsModalEl, () => closeModalEl(logsModalEl));
+  }
+
+  function setupLoginForm() {
+    userFilterEl?.addEventListener('input', () => populateUserSelect(userFilterEl.value));
+    loginSubmitEl?.addEventListener('click', handleLogin);
+    loginPasswordEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+  }
+
+  function setupResizeHandler() {
+    window.addEventListener('resize', () => {
+      renderedSections.forEach(({ sectionBody, columns }) => {
+        sectionBody.style.setProperty('--cols', getSectionCols(columns));
+      });
+    }, { passive: true });
+  }
+
   async function init() {
     checkbox = document.getElementById('themeToggle');
     knob     = document.querySelector('.theme-toggle .knob');
@@ -681,17 +759,6 @@
     disabledToggle = document.getElementById('disabledToggle');
     loginModal  = document.getElementById('loginModal');
 
-    gearBtn.addEventListener('click', () => {
-      const open = !gearPanel.hidden;
-      gearPanel.hidden = open;
-      gearBtn.setAttribute('aria-expanded', String(!open));
-    });
-    document.addEventListener('click', (e) => {
-      if (!gearPanel.hidden && !gearBtn.contains(e.target) && !gearPanel.contains(e.target)) {
-        gearPanel.hidden = true;
-        gearBtn.setAttribute('aria-expanded', 'false');
-      }
-    });
     userFilterEl    = document.getElementById('userFilter');
     userSelectEl    = document.getElementById('userSelect');
     loginPasswordEl = document.getElementById('loginPassword');
@@ -699,52 +766,21 @@
     loginErrorEl    = document.getElementById('loginError');
     loginSubmitEl   = document.getElementById('loginSubmit');
 
-    document.getElementById('togglePassword')?.addEventListener('click', () => {
-      const isPassword = loginPasswordEl.type === 'password';
-      loginPasswordEl.type = isPassword ? 'text' : 'password';
-      const icon = document.getElementById('eyeIcon');
-      if (icon) icon.innerHTML = isPassword
-        ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>'
-        : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
-    });
-
-    const saved = localStorage.getItem(STORAGE.theme);
-    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    setTheme(saved || (prefersDark ? 'dark' : 'light'), false);
-    checkbox?.addEventListener('change', () => setTheme(checkbox.checked ? 'dark' : 'light'));
-
-    const showDisabled = localStorage.getItem(STORAGE.showDisabled) === 'true';
-    if (disabledToggle) disabledToggle.checked = showDisabled;
-    disabledToggle?.addEventListener('change', () => {
-      localStorage.setItem(STORAGE.showDisabled, String(disabledToggle.checked));
-      loadServices();
-    });
-
-    document.getElementById('modalCancel')?.addEventListener('click', () => closeModal(false));
-    document.getElementById('modalConfirm')?.addEventListener('click', () => closeModal(true));
-    setupModalEvents(modal, () => closeModal(false));
-
-    document.getElementById('loginModalClose')?.addEventListener('click', closeLoginModal);
-    setupModalEvents(loginModal, closeLoginModal);
-
     logsModalEl    = document.getElementById('logsModal');
     logsModalPanel = logsModalEl?.querySelector('.modal-panel');
     logsStdoutEl   = document.getElementById('logsStdout');
     logsStderrEl   = document.getElementById('logsStderr');
     logsTabBtns    = logsModalEl?.querySelectorAll('.logs-tab') ?? [];
-    logsTabBtns.forEach(btn => btn.addEventListener('click', () => activateLogsTab(btn.dataset.tab)));
-    document.getElementById('logsCopyBtn')?.addEventListener('click', copyLogs);
-    document.getElementById('logsModalClose')?.addEventListener('click', () => closeModalEl(logsModalEl));
-    setupModalEvents(logsModalEl, () => closeModalEl(logsModalEl));
-    userFilterEl?.addEventListener('input', () => populateUserSelect(userFilterEl.value));
-    loginSubmitEl?.addEventListener('click', handleLogin);
-    loginPasswordEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
 
-    window.addEventListener('resize', () => {
-      renderedSections.forEach(({ sectionBody, columns }) => {
-        sectionBody.style.setProperty('--cols', getSectionCols(columns));
-      });
-    }, { passive: true });
+    setupGearEvents();
+    setupPasswordToggle();
+    setupTheme();
+    setupDisabledToggle();
+    setupConfirmModal();
+    setupLoginModal();
+    setupLogsModal();
+    setupLoginForm();
+    setupResizeHandler();
 
     await initFab();
 

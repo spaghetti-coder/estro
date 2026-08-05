@@ -1,0 +1,17 @@
+{
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint:js": "eslint public/",
+    "lint:css": "stylelint \"public/**/*.css\" \"public/**/*.html\"",
+    "lint": "npm run lint:js && npm run lint:css"
+  },
+  "devDependencies": {
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
+    "postcss-html": "^1.8.1",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-order": "^8.1.1"
+  }
+}

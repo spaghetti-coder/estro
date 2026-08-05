@@ -1,0 +1,37 @@
+export default {
+  extends: ["stylelint-config-standard"],
+  plugins: ["stylelint-order"],
+  rules: {
+    "alpha-value-notation": "number",
+    "color-function-notation": "modern",
+    "color-function-alias-notation": "without-alpha",
+    "media-feature-range-notation": "context",
+    "selector-not-notation": null,
+    "declaration-block-no-duplicate-custom-properties": true,
+    "no-duplicate-selectors": true,
+    "no-empty-source": true,
+    "declaration-block-single-line-max-declarations": null,
+    "rule-empty-line-before": null,
+    "at-rule-empty-line-before": null,
+    "comment-empty-line-before": null,
+    "selector-class-pattern": null,
+    "selector-id-pattern": null,
+    "keyframes-name-pattern": null,
+    "color-named": "never",
+    "no-descending-specificity": null,
+    "order/properties-alphabetical-order": null,
+    "order/order": [
+      "custom-properties",
+      "dollar-variables",
+      "declarations",
+      "rules",
+      "at-rules",
+    ],
+  },
+  overrides: [
+    {
+      files: ["**/*.html"],
+      customSyntax: "postcss-html",
+    },
+  ],
+};
