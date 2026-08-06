@@ -26,7 +26,7 @@
 # ---------------------------------------------------------------------------
 
 # Redundent in this scenario, just to demonstrate that `x-` prefixed keys
-# are supported. `x-` prefix is used to bypass unsupported keys validation
+# are supported to bypass unsupported keys validation
 x-bind-address: &bind-address
   # Bind address (default 127.0.0.1:3000)
   hostname: 0.0.0.0
@@ -75,12 +75,10 @@ users:
     password: 'plain:changeme3'
 
 sections:
-  # Public (no `allowed`)
-  # Always open (collapsable: false)
-  # Single-column (columns: 1)
+  # Public (inherits `global.allowed`)
   - title: Public Info
-    collapsable: false
-    columns: 1
+    collapsable: false          # always open
+    columns: 1                  # single-column
     services:
       - title: Uptime           # confirm inherits global true
         command: uptime
@@ -88,7 +86,7 @@ sections:
         command: date
         confirm: false          # override: no dialog for this service
 
-  # Public (no `allowed`)
+  # Public (inherits `global.allowed`)
   # Collapsable (inherits `global.collapsable`)
   # 3 columns (inherits `global.columns`)
   - title: System
