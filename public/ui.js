@@ -568,15 +568,10 @@
       const vw = document.documentElement.clientWidth;
       const newSide = e.clientX < vw / 2 ? 'left' : 'right';
       if (Math.abs(dx) > 30) {
-        // horizontal intent — follow cursor and animate to side
+        // horizontal intent — follow cursor
         fab.style.left = `${Math.max(0, Math.min(vw - fabW, e.clientX - fabW / 2))}px`;
-        if (newSide !== side) {
-          side = newSide;
-          animateFabToPos();
-        }
-      } else {
-        side = newSide;
       }
+      side = newSide;
     });
 
     function stopDrag(e) {
